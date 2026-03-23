@@ -1,0 +1,135 @@
+---
+title: Database
+description: PostgreSQL setup, Drizzle ORM migration commands, and database management for AI Review.
+---
+
+AI Review uses **PostgreSQL** as its database. Schema migrations are managed with **Drizzle ORM**.
+
+## Configuration
+
+Set the `DATABASE_URL` environment variable to your PostgreSQL connection string:
+
+```bash
+DATABASE_URL="postgresql://user:password@host:5432/ai_review"
+```
+
+This is the only required database environment variable. The application connects using Drizzle's PostgreSQL client.
+
+## Migration commands
+
+<Tabs>
+  <Tab title="Development">
+    Run migrations against the development database:
+
+    ```bash
+    pnpm db:migrate:dev
+    ```
+
+    Or using the script directly:
+
+    ```bash
+    ./scripts/db-migrate.sh development migrate
+    ```
+
+    The development environment does not prompt for confirmation before running.
+
+    To push schema changes directly without generating a migration file (development only):
+
+    ```bash
+    pnpm db:push:dev
+    ```
+
+    <Warning>
+      `db:push` overwrites the database schema without generating a migration history. Only use it in development environments.
+    </Warning>
+  </Tab>
+  <Tab title="Staging">
+    Run migrations against the staging database:
+
+    ```bash
+    pnpm db:migrate:staging
+    ```
+
+    Or using the script directly:
+
+    ```bash
+    ./scripts/db-migrate.sh staging migrate
+    ```
+
+    Non-development environments require you to type the environment name to confirm before the migration runs.
+  </Tab>
+  <Tab title="Production">
+    Run migrations against the production database:
+
+    ```bash
+    pnpm db:migrate:production
+    ```
+
+    Or using the script directly:
+
+    ```bash
+    ./scripts/db-migrate.sh production migrate
+    ```
+
+    <Warning>
+      Non-development environments require you to type the environment name (`production`) at the confirmation prompt before the migration executes. This is a safety guard against accidental runs.
+    </Warning>
+
+    Production migration best practices:
+
+    - Run the migration **before** deploying the new application version
+    - Confirm a valid backup exists before running
+    - Use a minimal-privilege database account for the application process
+    - Validate the migration on staging first
+  </Tab>
+</Tabs>
+
+## Drizzle Studio
+
+Open the Drizzle Studio GUI to inspect and manage the database:
+
+```bash
+pnpm --filter server db:studio
+```
+
+This starts a local web interface connected to the database configured via `DATABASE_URL`.
+
+## Generating migrations
+
+When you modify the Drizzle schema files, generate a new migration:
+
+```bash
+pnpm --filter server db:generate
+```
+
+This creates a new migration file in the server's migrations directory. Commit this file alongside your schema changes.
+
+## Development data directory
+
+The development Docker Compose configuration stores PostgreSQL data in:
+
+```text
+./data/postgres/
+```
+
+The full development data layout is:
+
+```text
+./data/
+├── logs/
+├── postgres/
+├── redis/
+└── gitlab/
+```
+
+## Resetting the development environment
+
+<Warning>
+  `pnpm env:reset` is a destructive operation. It deletes all local development containers, volumes, and the contents of `./data`. This cannot be undone.
+</Warning>
+
+```bash
+pnpm env:reset
+```
+
+The script will prompt you to confirm before proceeding. After the reset, re-run `pnpm env:init` to restore the development environment and re-run migrations.

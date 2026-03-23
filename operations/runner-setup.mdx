@@ -1,0 +1,114 @@
+---
+title: Runner setup
+description: How to deploy and manage AI Review Runner instances for isolated review execution.
+---
+
+The Runner is a standalone process that picks up review tasks from the main server and executes them inside Docker containers. You can run one or more runner instances alongside the main server.
+
+## How it works
+
+Each runner:
+
+1. Registers with the main server using a Runner Token (Better Auth API key)
+2. Sends periodic heartbeats to report availability
+3. Polls for pending tasks
+4. Executes reviews inside an isolated Docker container
+5. Reports task status and results back to the server
+
+If no runner is registered, review tasks will queue up in the pending state and will not be processed.
+
+## Prerequisites
+
+- Docker installed and accessible on the runner host
+- Network connectivity from the runner host to the main server
+- A valid API key created in the main server (used as `RUNNER_TOKEN`)
+
+## Environment variables
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `RUNNER_SERVER_URL` | Yes | URL of the main AI Review server |
+| `RUNNER_TOKEN` | Yes | Better Auth API key from the main server |
+| `RUNNER_NAME` | Yes | Unique name for this runner instance |
+| `DOCKER_EXECUTOR_IMAGE` | Yes | Docker image used to execute reviews |
+| `RUNNER_MAX_CONCURRENT_JOBS` | No | Maximum number of simultaneous review jobs |
+| `RUNNER_CLONE_DEPTH` | No | Git clone depth for repository checkouts |
+| `RUNNER_POLL_INTERVAL_MS` | No | How often the runner polls for new tasks (ms) |
+| `RUNNER_POLL_TIMEOUT_MS` | No | Timeout for each poll request (ms) |
+| `RUNNER_HEARTBEAT_INTERVAL_MS` | No | How often the runner sends heartbeats (ms) |
+| `RUNNER_REQUEST_TIMEOUT_MS` | No | Timeout for requests to the main server (ms) |
+| `DOCKER_MEMORY_LIMIT` | No | Memory limit for executor containers |
+| `DOCKER_CPU_LIMIT` | No | CPU limit for executor containers |
+| `DOCKER_NETWORK_MODE` | No | Docker network mode for executor containers |
+| `DOCKER_WORKSPACE_BASE` | No | Base path for runner workspaces |
+| `DOCKER_TIMEOUT_SECONDS` | No | Timeout for container execution (seconds) |
+| `DOCKER_POOL_SIZE` | No | Number of pre-warmed executor containers |
+| `DOCKER_HOST` | No | Docker daemon socket or host |
+
+## Setup
+
+<Steps>
+  <Step title="Create a Runner Token">
+    In the main server's admin interface, create a Better Auth API key. This value will be used as `RUNNER_TOKEN`.
+  </Step>
+  <Step title="Configure environment variables">
+    Set the required variables for the runner. Example:
+
+    ```bash
+    export RUNNER_SERVER_URL="http://your-server-host:3000"
+    export RUNNER_TOKEN="your-api-key"
+    export RUNNER_NAME="prod-runner-1"
+    export DOCKER_EXECUTOR_IMAGE="ai-review-executor:latest"
+    ```
+  </Step>
+  <Step title="Build the runner and executor images">
+    ```bash
+    docker compose -f docker-compose.runner.yml build
+    ```
+
+    This builds both the `ai-review-runner` image and the `ai-review-executor` image used for isolated task execution.
+  </Step>
+  <Step title="Start the runner">
+    ```bash
+    docker compose -f docker-compose.runner.yml up -d
+    ```
+  </Step>
+  <Step title="Verify registration">
+    Check the admin dashboard to confirm the runner appears as registered and is sending heartbeats.
+  </Step>
+</Steps>
+
+## Docker socket requirement
+
+<Warning>
+  The runner container must have access to the Docker socket. The `docker-compose.runner.yml` mounts `/var/run/docker.sock` from the host into the runner container:
+
+  ```yaml
+  volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+  ```
+
+  This grants the runner the ability to create and manage containers on the host. Ensure you understand the security implications before deploying in sensitive environments.
+</Warning>
+
+## Network requirements
+
+The runner must be able to reach the main server at `RUNNER_SERVER_URL`. When running locally with Docker, `http://host.docker.internal:3000` resolves to the host machine. For remote deployments, use the server's actual hostname or IP address.
+
+## Scaling runners
+
+To run multiple runner instances, start additional containers with unique `RUNNER_NAME` values. Each instance registers independently and picks up tasks from the shared queue.
+
+```bash
+RUNNER_NAME=prod-runner-2 docker compose -f docker-compose.runner.yml up -d
+```
+
+## Task concurrency
+
+Control how many review jobs a single runner processes at the same time using `RUNNER_MAX_CONCURRENT_JOBS`. Tune this based on available CPU, memory, and the Docker resource limits configured for executor containers.
+
+## Monitoring runner health
+
+Runner status is visible in the admin dashboard. Each registered runner shows its last heartbeat timestamp. You can also query runner health programmatically through the server API.
+
+If a runner stops sending heartbeats, its tasks will remain in the queue until the runner reconnects or another runner picks them up.

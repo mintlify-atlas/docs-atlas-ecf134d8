@@ -1,0 +1,263 @@
+---
+title: Notifications
+description: Configure notification channels and manage notification history in AI Review.
+---
+
+<Note>
+  The notification infrastructure is in place for all channels listed below, but
+  individual channel readiness may vary. Verify each channel with the test
+  endpoint before relying on it in production.
+</Note>
+
+## Available channels
+
+AI Review includes implementations for the following notification channels:
+
+| Channel | Identifier |
+|---|---|
+| Email | `email` |
+| Slack | `slack` |
+| Webhook | `webhook` |
+| DingTalk | `dingtalk` |
+| Feishu | `feishu` |
+| WeChat | `wechat` |
+| Browser Push | `push` |
+
+## Configure notifications
+
+### Retrieve current configuration
+
+```http
+GET /api/notifications/config
+```
+
+Returns the stored notification configuration object.
+
+### Create or replace configuration
+
+```http
+POST /api/notifications/config
+Content-Type: application/json
+```
+
+Replaces the entire notification configuration. Accepted fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `channels` | `string[]` | List of enabled channel identifiers |
+| `emailEnabled` | `boolean` | Enable or disable email notifications |
+| `slackWebhookUrl` | `string` (URL) | Incoming webhook URL for Slack |
+| `dingtalkWebhookUrl` | `string` (URL) | Incoming webhook URL for DingTalk |
+| `feishuWebhookUrl` | `string` (URL) | Incoming webhook URL for Feishu |
+
+### Partial update
+
+```http
+PATCH /api/notifications/config
+Content-Type: application/json
+```
+
+Accepts the same fields as `POST` but only updates the supplied keys.
+
+## Channel configuration
+
+<Tabs>
+  <Tab title="Slack">
+    Set `slackWebhookUrl` to your Slack incoming webhook URL and include
+    `"slack"` in the `channels` array:
+
+    ```json
+    {
+      "channels": ["slack"],
+      "slackWebhookUrl": "https://hooks.slack.com/services/..."
+    }
+    ```
+  </Tab>
+  <Tab title="DingTalk">
+    Set `dingtalkWebhookUrl` to your DingTalk custom robot webhook URL and
+    include `"dingtalk"` in the `channels` array:
+
+    ```json
+    {
+      "channels": ["dingtalk"],
+      "dingtalkWebhookUrl": "https://oapi.dingtalk.com/robot/send?access_token=..."
+    }
+    ```
+  </Tab>
+  <Tab title="Feishu">
+    Set `feishuWebhookUrl` to your Feishu bot webhook URL and include
+    `"feishu"` in the `channels` array:
+
+    ```json
+    {
+      "channels": ["feishu"],
+      "feishuWebhookUrl": "https://open.feishu.cn/open-apis/bot/v2/hook/..."
+    }
+    ```
+  </Tab>
+  <Tab title="Email">
+    Enable email notifications by setting `emailEnabled` to `true` and
+    including `"email"` in the `channels` array:
+
+    ```json
+    {
+      "channels": ["email"],
+      "emailEnabled": true
+    }
+    ```
+  </Tab>
+  <Tab title="Webhook">
+    Include `"webhook"` in the `channels` array. Webhook delivery is handled
+    by the notification manager using the global webhook base URL configured
+    via the `WEBHOOK_BASE_URL` environment variable.
+
+    ```json
+    {
+      "channels": ["webhook"]
+    }
+    ```
+  </Tab>
+  <Tab title="Browser Push">
+    Include `"push"` in the `channels` array. Browser Push requires VAPID keys
+    to be generated first — see [Push notifications](#push-notifications) below.
+
+    ```json
+    {
+      "channels": ["push"]
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Test a channel
+
+Before relying on a channel, send a test notification:
+
+```http
+POST /api/notifications/config/test-channel
+Content-Type: application/json
+
+{
+  "channel": "slack"
+}
+```
+
+Valid values for `channel`: `email`, `webhook`, `slack`, `wechat`, `dingtalk`,
+`feishu`, `push`.
+
+The response contains a `result` field with the outcome from the notification
+manager.
+
+## Push notifications
+
+Browser Push notifications use the Web Push protocol and require a VAPID key
+pair.
+
+### Generate VAPID keys
+
+```http
+POST /api/notifications/config/generate-vapid-keys
+```
+
+Returns a new key pair:
+
+```json
+{
+  "data": {
+    "keys": {
+      "publicKey": "...",
+      "privateKey": "..."
+    }
+  }
+}
+```
+
+Store both keys in your notification configuration. The public key must be
+provided to browser clients when registering subscriptions.
+
+### Manage subscriptions
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/notifications/push/subscribe` | Register a new push subscription |
+| `GET` | `/api/notifications/push/subscriptions` | List all push subscriptions |
+| `GET` | `/api/notifications/push/users/:userId` | List subscriptions for a user |
+| `POST` | `/api/notifications/push/touch` | Update last-used time for a subscription |
+| `DELETE` | `/api/notifications/push/unsubscribe` | Remove a push subscription |
+| `POST` | `/api/notifications/push/clean` | Delete all expired push subscriptions |
+
+A subscription payload (for `POST /push/subscribe`) requires:
+
+```json
+{
+  "endpoint": "https://...",
+  "keys": { ... },
+  "userId": "optional-user-id",
+  "userAgent": "optional-user-agent"
+}
+```
+
+<Tip>
+  The browser-side push management UI is available under the **Notifications**
+  section in the dashboard. Enable push in your browser settings before
+  subscribing.
+</Tip>
+
+## Notification history
+
+### List notifications
+
+```http
+GET /api/notifications
+```
+
+Supports query parameters for filtering and pagination:
+
+| Parameter | Type | Description |
+|---|---|---|
+| `page` | number | Page number (default: `1`) |
+| `pageSize` | number | Items per page (default: `10`) |
+| `channel` | string | Filter by channel identifier |
+| `status` | string | Filter by status |
+| `notificationType` | string | Filter by notification type |
+| `reviewId` | string | Filter by associated review ID |
+| `startDate` | string | ISO 8601 start date for range filter |
+| `endDate` | string | ISO 8601 end date for range filter |
+
+### Get notification detail
+
+```http
+GET /api/notifications/history/:id
+```
+
+Returns full detail for a single notification record.
+
+### Get statistics
+
+```http
+GET /api/notifications/stats
+```
+
+Accepts optional `startDate` and `endDate` query parameters. Returns aggregate
+stats for the specified period.
+
+### Pending and failed notifications
+
+```http
+GET /api/notifications/pending
+GET /api/notifications/failed
+```
+
+Returns lists of pending or failed notification records. Use `PATCH
+/api/notifications/history/:id` to update status and retry as needed.
+
+### Clean old notifications
+
+```http
+POST /api/notifications/clean
+Content-Type: application/json
+
+{ "days": 30 }
+```
+
+Deletes notification records older than the specified number of days.

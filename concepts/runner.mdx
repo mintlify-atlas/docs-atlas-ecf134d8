@@ -1,0 +1,149 @@
+---
+title: Runner
+description: How the standalone executor polls for tasks and runs reviews in isolated Docker containers.
+---
+
+The runner (`apps/runner`) is a standalone process that is separate from the main server. It polls the server for pending review tasks, executes them inside a Docker container, and reports results back. Nothing executes inside the main server process itself.
+
+## Why runners are separate
+
+<CardGroup cols={2}>
+  <Card title="Isolation">
+    Each review runs inside a Docker container. A crashed or misbehaving review cannot affect the main API service.
+  </Card>
+  <Card title="Horizontal scaling">
+    Multiple runner instances can register against the same server, distributing review load across machines or containers.
+  </Card>
+  <Card title="Resource control">
+    CPU, memory, and concurrency limits are configured on the runner side, not on the API server.
+  </Card>
+  <Card title="Lean server">
+    The main server only queues tasks and processes results — it never executes user code or clones repositories.
+  </Card>
+</CardGroup>
+
+## Registration
+
+Before a runner can accept tasks, it must register with the server using a Better Auth API key:
+
+```bash
+export RUNNER_SERVER_URL="http://localhost:3000"
+export RUNNER_TOKEN="your-api-key"
+export RUNNER_NAME="my-runner"
+```
+
+The runner calls the server's runner registration endpoint on startup and receives an identity that is used for all subsequent communication. `RUNNER_TOKEN` must correspond to a valid API key created through Better Auth.
+
+<Warning>
+  If `RUNNER_TOKEN` is invalid or the runner fails to register, all pending tasks remain in the queue indefinitely — no reviews will execute.
+</Warning>
+
+## Heartbeat mechanism
+
+After registration, the runner sends periodic heartbeats to the server to signal that it is healthy and available. The server uses these heartbeats to track runner status.
+
+- **Runner side**: heartbeat interval is controlled by `RUNNER_HEARTBEAT_INTERVAL_MS`
+- **Server side**: if no heartbeat is received within `RUNNER_HEARTBEAT_TIMEOUT_MS`, the runner is marked as offline
+
+You can monitor heartbeat status from the Runner management page in the dashboard.
+
+<Note>
+  An offline runner does not block the queue — tasks remain pending and are picked up as soon as a healthy runner comes back online.
+</Note>
+
+## Task lifecycle
+
+Each task moves through these states:
+
+```text
+pending  →  picked up  →  executing  →  result reported
+```
+
+The runner's core components manage this flow:
+
+```text
+apps/runner/src/core/
+├── runner.ts          # Top-level runner process
+├── task-poller.ts     # Polls server for pending tasks
+├── task-executor.ts   # Drives execution for a single task
+└── health-monitor.ts  # Manages heartbeat reporting
+```
+
+The poller checks for available tasks at the interval set by `RUNNER_POLL_INTERVAL_MS`. When a task is found, `task-executor.ts` claims it and hands it off to the Docker executor.
+
+## Docker executor
+
+All reviews execute inside a Docker container. The image is configured with `DOCKER_EXECUTOR_IMAGE`:
+
+```bash
+export DOCKER_EXECUTOR_IMAGE="ai-review-executor:latest"
+```
+
+The runner requires access to the Docker daemon. When deploying with Docker Compose, mount the socket:
+
+```yaml
+volumes:
+  - /var/run/docker.sock:/var/run/docker.sock
+```
+
+The executor image is built from `apps/runner/Dockerfile.executor`.
+
+## Environment variables
+
+### Required
+
+| Variable | Description |
+|---|---|
+| `RUNNER_SERVER_URL` | URL of the main API server |
+| `RUNNER_TOKEN` | Better Auth API key for runner authentication |
+| `RUNNER_NAME` | Display name for this runner instance |
+| `DOCKER_EXECUTOR_IMAGE` | Docker image used to execute reviews |
+
+### Optional
+
+| Variable | Description |
+|---|---|
+| `RUNNER_MAX_CONCURRENT_JOBS` | Maximum reviews to run in parallel |
+| `RUNNER_POLL_INTERVAL_MS` | How often to poll for new tasks |
+| `RUNNER_POLL_TIMEOUT_MS` | Timeout for each poll request |
+| `RUNNER_HEARTBEAT_INTERVAL_MS` | How often to send a heartbeat |
+| `RUNNER_REQUEST_TIMEOUT_MS` | Timeout for HTTP requests to the server |
+| `RUNNER_CLONE_DEPTH` | Git clone depth used during review |
+| `DOCKER_MEMORY_LIMIT` | Memory limit for executor containers |
+| `DOCKER_CPU_LIMIT` | CPU limit for executor containers |
+| `DOCKER_NETWORK_MODE` | Docker network mode for containers |
+| `DOCKER_WORKSPACE_BASE` | Base path for container workspaces |
+| `DOCKER_TIMEOUT_SECONDS` | Timeout for a single container execution |
+| `DOCKER_POOL_SIZE` | Pre-warmed container pool size |
+| `DOCKER_HOST` | Docker daemon socket or host |
+
+The server also reads `RUNNER_HEARTBEAT_TIMEOUT_MS` to decide when a runner is considered offline.
+
+## Deployment
+
+The recommended way to deploy a runner is with `docker-compose.runner.yml` from the repository root:
+
+```bash
+docker compose -f docker-compose.runner.yml build
+docker compose -f docker-compose.runner.yml up -d
+```
+
+For local development without Docker Compose:
+
+```bash
+pnpm install
+pnpm --filter @ai-review/env build
+pnpm --filter runner dev
+```
+
+## Monitoring
+
+Two signals indicate runner health:
+
+1. **Heartbeat status** — visible in the Runner management page of the dashboard. A runner that has stopped sending heartbeats will be shown as offline after `RUNNER_HEARTBEAT_TIMEOUT_MS` elapses.
+
+2. **Task queue depth** — visible via the queue monitoring interface (available in development at `/api/queuedash`). A growing queue of pending tasks with no active runners indicates a registration or connectivity problem.
+
+<Tip>
+  Run multiple runner instances pointing at the same server to increase throughput. Each instance registers independently and claims tasks from the shared queue.
+</Tip>

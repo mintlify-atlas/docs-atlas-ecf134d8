@@ -1,0 +1,195 @@
+---
+title: Health
+description: Endpoints for checking the health and operational status of the AI Review server.
+---
+
+Health endpoints allow load balancers, orchestrators (Docker, Kubernetes), and monitoring systems to check the server's readiness and component status.
+
+---
+
+## Basic health check
+
+`GET /api/health`
+
+Returns a simple liveness response. **No authentication required.** Suitable for load balancer health probes and Docker / Kubernetes `healthcheck` directives.
+
+```bash
+curl -X GET https://your-domain.com/api/health
+```
+
+**Response `200`**
+
+<ResponseField name="data.status" type="string">
+  Always `ok` when the server is running.
+</ResponseField>
+
+<ResponseField name="data.timestamp" type="string">
+  ISO 8601 server timestamp.
+</ResponseField>
+
+<ResponseField name="data.environment" type="object">
+  <Expandable title="Environment fields">
+    <ResponseField name="appEnv" type="string">Application environment (e.g., `production`).</ResponseField>
+    <ResponseField name="nodeEnv" type="string">Node.js environment string.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Detailed health check
+
+`GET /api/health/detailed`
+
+Returns extended server information. Requires authentication.
+
+```bash
+curl -X GET https://your-domain.com/api/health/detailed \
+  -H "Authorization: Bearer <api-key>"
+```
+
+**Response `200`**
+
+<ResponseField name="data.status" type="string">
+  Server status string.
+</ResponseField>
+
+<ResponseField name="data.uptime" type="number">
+  Server uptime in seconds.
+</ResponseField>
+
+<ResponseField name="data.timestamp" type="string">
+  ISO 8601 timestamp.
+</ResponseField>
+
+<ResponseField name="data.version" type="string">
+  Application version.
+</ResponseField>
+
+---
+
+## Run all health checks
+
+`GET /api/health/check`
+
+Executes a full suite of health checks and persists the results to the database. Requires authentication.
+
+Checks include: database connectivity, platform connectivity (GitLab / GitHub), AI provider availability, and disk space.
+
+```bash
+curl -X GET https://your-domain.com/api/health/check \
+  -H "Authorization: Bearer <api-key>"
+```
+
+**Response `200`**
+
+<ResponseField name="data.overall" type="string">
+  Aggregated health status: `healthy` | `degraded` | `unhealthy`.
+</ResponseField>
+
+<ResponseField name="data.checks" type="array">
+  <Expandable title="Individual check fields">
+    <ResponseField name="checkType" type="string">Component category: `database` | `gitlab` | `ai_provider` | `disk_space`.</ResponseField>
+    <ResponseField name="checkName" type="string">Specific check name.</ResponseField>
+    <ResponseField name="status" type="string">`healthy` | `degraded` | `unhealthy`</ResponseField>
+    <ResponseField name="details" type="object">Additional check-specific details.</ResponseField>
+    <ResponseField name="responseTime" type="number">Check duration in milliseconds.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Get current health status
+
+`GET /api/health/status`
+
+Returns the most recent health check results from the database cache. Faster than running a full check. Requires authentication.
+
+**Response `200`**
+
+<ResponseField name="data.overall" type="string">
+  Overall health status: `healthy` | `degraded` | `unhealthy`.
+</ResponseField>
+
+<ResponseField name="data.checks" type="array">
+  Most recent check results for each component.
+</ResponseField>
+
+<ResponseField name="data.timestamp" type="string">
+  ISO 8601 timestamp.
+</ResponseField>
+
+---
+
+## Health check history
+
+`GET /api/health/history`
+
+Returns historical health check records with optional filtering. Requires authentication.
+
+<ParamField query="checkType" type="string">
+  Filter by component type: `database` | `gitlab` | `ai_provider` | `disk_space`.
+</ParamField>
+
+<ParamField query="status" type="string">
+  Filter by result status: `healthy` | `degraded` | `unhealthy`.
+</ParamField>
+
+<ParamField query="startDate" type="string">
+  ISO 8601 start date.
+</ParamField>
+
+<ParamField query="endDate" type="string">
+  ISO 8601 end date.
+</ParamField>
+
+<ParamField query="limit" type="number">
+  Maximum number of records to return.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data.checks" type="array">
+  Historical health check records.
+</ResponseField>
+
+---
+
+## Individual component checks
+
+The following endpoints each run a check for a specific component, save the result to the database, and return it. All require authentication.
+
+### Database
+
+`GET /api/health/database`
+
+Checks the PostgreSQL database connection.
+
+### GitLab
+
+`GET /api/health/gitlab`
+
+Checks connectivity to the configured GitLab instance(s).
+
+### AI Providers
+
+`GET /api/health/ai-providers`
+
+Checks all configured AI providers.
+
+**Response `200`**
+
+<ResponseField name="data.checks" type="array">
+  One check result per configured AI provider.
+</ResponseField>
+
+### Disk space
+
+`GET /api/health/disk-space`
+
+Checks available disk space on the server.
+
+---
+
+<Note>
+  The `GET /api/health` endpoint (basic liveness check) does not require authentication and is safe to expose to external health monitoring systems. All other health endpoints require a valid session or API key.
+</Note>

@@ -1,0 +1,166 @@
+---
+title: Deployment
+description: How to deploy AI Review in production, covering both single-service and server+runner configurations.
+---
+
+## Requirements
+
+Before deploying, ensure the following are available:
+
+- Node.js 18+
+- pnpm 10+
+- PostgreSQL
+- Redis (required by BullMQ queues — there is no in-memory fallback)
+- Docker (required if using the Runner)
+- Writable directories for logs and backups
+
+## Deployment modes
+
+<Tabs>
+  <Tab title="Single service">
+    The server process serves both the `/api` routes and the compiled frontend static assets from `./public`. This is the simplest deployment topology.
+
+    One container or process handles everything. No separate runner process is required unless you want isolated review execution.
+  </Tab>
+  <Tab title="Server + runner">
+    The main server handles orchestration and the API. One or more runner processes independently pick up and execute review tasks.
+
+    This mode is useful when you want to isolate review execution, control resource usage, or run reviews inside Docker sandboxes.
+
+    See [Runner setup](/operations/runner-setup) for runner-specific configuration.
+  </Tab>
+</Tabs>
+
+## Required environment variables
+
+| Variable | Description |
+| --- | --- |
+| `DATABASE_URL` | PostgreSQL connection string |
+| `BETTER_AUTH_SECRET` | Authentication secret (32+ characters) |
+
+## Recommended environment variables
+
+| Variable | Description |
+| --- | --- |
+| `APP_URL` | Public URL of the application |
+| `APP_URLs` | Allowed origin URLs |
+| `BETTER_AUTH_URL` | URL used by Better Auth |
+| `PORT` | Server listen port (default: `3000`) |
+| `HOSTNAME` | Server listen hostname |
+| `REDIS_URL` | Redis connection string |
+| `AI_REVIEW_CONCURRENCY` | Number of concurrent review jobs |
+| `WEBHOOK_BASE_URL` | Base URL for incoming webhooks |
+| `LOG_DIR` | Directory for log files |
+| `LOG_LEVEL` | Log verbosity level |
+| `LOG_RETENTION_DAYS` | How many days to retain log files |
+| `BACKUP_DIR` | Directory for backup files |
+| `AUTO_BACKUP_ENABLED` | Enable automatic backups |
+| `BACKUP_RETENTION_DAYS` | How many days to retain backups |
+| `METRICS_RETENTION_DAYS` | How many days to retain metrics data |
+
+## AI provider configuration
+
+The currently active AI runtime is `volcengine`. For review and chat functionality in production, configure at minimum:
+
+```bash
+VOLCENGINE_API_KEY=your-key
+VOLCENGINE_ENDPOINT=your-endpoint
+```
+
+Other provider variables (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `AZURE_OPENAI_API_KEY`, etc.) are accepted by the container but correspond to runtimes that are not currently active.
+
+## Build
+
+<Steps>
+  <Step title="Install dependencies">
+    ```bash
+    pnpm install --frozen-lockfile
+    ```
+  </Step>
+  <Step title="Build all packages">
+    ```bash
+    pnpm build
+    ```
+
+    This builds the environment package, the frontend, and the server. The frontend build output is copied into the server's `dist/public` directory.
+
+    To build individual packages:
+
+    ```bash
+    # Server only
+    pnpm --filter server build
+
+    # Frontend only
+    pnpm --filter web build
+    ```
+  </Step>
+</Steps>
+
+## Database migration
+
+<Warning>
+  Always run the database migration **before** deploying a new version. Running migrations after deployment can result in the application starting against an incompatible schema.
+</Warning>
+
+```bash
+pnpm --filter server db:migrate
+```
+
+Production migration best practices:
+
+- Validate the migration on a staging environment first
+- Confirm a valid backup exists before migrating the production database
+- Use a minimal-privilege database account for the application
+
+## Deploying with Docker Compose
+
+<Steps>
+  <Step title="Create your production env file">
+    Copy and populate `.env.production` with your required environment variables.
+  </Step>
+  <Step title="Run the migration">
+    ```bash
+    pnpm --filter server db:migrate
+    ```
+  </Step>
+  <Step title="Start the application">
+    ```bash
+    docker compose --env-file .env.production -f docker-compose.yml up -d
+    ```
+
+    The container exposes port `3000` internally. The Docker Compose file maps it to host port `9000` by default:
+
+    ```yaml
+    ports:
+      - "9000:3000"
+    ```
+  </Step>
+  <Step title="Verify the service">
+    ```bash
+    curl http://localhost:9000/api/health
+    ```
+  </Step>
+</Steps>
+
+## Static asset hosting
+
+In production, the server serves frontend static files from the `./public` directory relative to its working directory. If your build artifact distribution differs from the default build process, ensure the compiled frontend assets are placed where the server process can access them at runtime.
+
+## Upgrade procedure
+
+<Steps>
+  <Step title="Record the current commit SHA">
+    ```bash
+    git rev-parse HEAD
+    ```
+  </Step>
+  <Step title="Validate on staging">
+    Run the database migration and verify webhook behavior on a staging environment before touching production.
+  </Step>
+  <Step title="Verify runner registration">
+    Confirm that runner registration, heartbeat reporting, and task pickup still work after the migration.
+  </Step>
+  <Step title="Deploy to production">
+    Run the migration, then deploy the new container or process.
+  </Step>
+</Steps>

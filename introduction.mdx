@@ -1,0 +1,81 @@
+---
+title: Introduction
+description: AI-powered automated code review platform for GitLab and GitHub
+---
+
+# AI Review
+
+AI Review is a full-stack platform that automatically reviews your merge requests and pull requests using AI models. It integrates directly with GitLab and GitHub via webhooks, runs isolated review jobs on distributed runners, and posts structured feedback back to your code platform.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get AI Review running and your first automated review in minutes
+  </Card>
+  <Card title="Self-Hosting" icon="server" href="/self-hosting">
+    Deploy AI Review on your own infrastructure with Docker
+  </Card>
+  <Card title="Platform Integration" icon="plug" href="/integrations/gitlab">
+    Connect GitLab or GitHub and configure webhooks
+  </Card>
+  <Card title="API Reference" icon="code" href="/api-reference/overview">
+    Explore the full REST API surface
+  </Card>
+</CardGroup>
+
+## What AI Review does
+
+When a developer opens a merge request (GitLab) or pull request (GitHub), AI Review:
+
+1. Receives the webhook event from the platform
+2. Checks whether the project has automated review enabled and has a valid AI configuration
+3. Enqueues the review task via BullMQ
+4. A Runner picks up the task, executes the AI review in an isolated Docker environment
+5. The result — inline comments, a summary, a rating, and per-file analysis — is posted back to the platform and stored in the database
+
+## System components
+
+<CardGroup cols={3}>
+  <Card title="Server" icon="database">
+    Hono API service. Handles webhooks, orchestrates reviews, manages platform integrations, and serves the frontend in production.
+  </Card>
+  <Card title="Web" icon="browser">
+    React 19 admin dashboard. Provides project management, review history, runner status, trends, notifications, and AI assistant.
+  </Card>
+  <Card title="Runner" icon="play">
+    Standalone executor. Polls the server for tasks, runs AI review in an isolated Docker container, and reports results back.
+  </Card>
+</CardGroup>
+
+## Key features
+
+- **Automated reviews** — Trigger on GitLab MR open/update/reopen and GitHub PR opened/synchronize/reopened
+- **Distributed execution** — Runners execute reviews in isolated Docker containers, separate from the main service
+- **Configurable AI** — Templates, rules, and rating systems per project
+- **Rich results** — Per-file comments, review rounds, ratings, and feedback stored and displayed in the dashboard
+- **Multi-platform** — Supports GitLab (self-hosted or cloud) and GitHub (cloud or enterprise)
+- **Notifications** — Email, Slack, DingTalk, Feishu, WeChat, and browser push
+- **AI assistant** — Chat interface for ad-hoc AI queries with session management
+- **Observability** — Health checks, metrics, structured logs, backups
+
+## Technology stack
+
+| Layer | Technology |
+|---|---|
+| API Server | [Hono](https://hono.dev), Node.js 18+ |
+| Database | PostgreSQL + Drizzle ORM |
+| Queue | BullMQ + Redis |
+| Frontend | React 19, TanStack Router, TanStack Query, Vite |
+| Auth | Better Auth (session + API key) |
+| AI | Volcengine (current active provider) |
+| Deployment | Docker, Docker Compose |
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="bolt" href="/quickstart">
+    Run AI Review locally in under 5 minutes
+  </Card>
+  <Card title="Architecture" icon="diagram-project" href="/concepts/architecture">
+    Understand how the components fit together
+  </Card>
+</CardGroup>

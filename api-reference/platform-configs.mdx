@@ -1,0 +1,374 @@
+---
+title: Platform Configs
+description: Endpoints for creating and managing GitLab and GitHub platform connections used by AI Review.
+---
+
+Platform configs store the credentials and settings required to connect to a GitLab or GitHub instance. All endpoints are under `/api/platform-configs` and require authentication.
+
+<Note>
+  Sensitive fields (`accessToken`, `webhookSecret`) are masked in all responses. The raw access token is only available via the admin-only `GET /api/platform-configs/:id/access-token` endpoint.
+</Note>
+
+---
+
+## Platform config schema
+
+The following fields are shared by the create and update endpoints:
+
+<ParamField body="name" type="string" required>
+  Human-readable name for this platform connection (e.g., `Company GitLab`, `GitHub Main`).
+</ParamField>
+
+<ParamField body="platformType" type="string" required>
+  Platform type: `gitlab` | `github`.
+</ParamField>
+
+<ParamField body="baseUrl" type="string" required>
+  Base URL of the platform instance (e.g., `https://gitlab.example.com` or `https://github.com`).
+</ParamField>
+
+<ParamField body="authType" type="string">
+  Authentication mechanism: `token` (default) | `oauth`.
+</ParamField>
+
+<ParamField body="accessToken" type="string">
+  Personal access token (for `authType: token`) or OAuth2 access token. Required when `authType` is `token`.
+</ParamField>
+
+<ParamField body="appId" type="string">
+  OAuth2 Application ID. Required for `authType: oauth`.
+</ParamField>
+
+<ParamField body="appSecret" type="string">
+  OAuth2 Application Secret. Required for `authType: oauth`.
+</ParamField>
+
+<ParamField body="webhookSecret" type="string">
+  Secret token used to validate incoming webhook requests.
+</ParamField>
+
+<ParamField body="enabled" type="boolean">
+  Whether this platform config is active. Default: `true`.
+</ParamField>
+
+<ParamField body="isDefault" type="boolean">
+  Mark this as the default platform config. Default: `false`.
+</ParamField>
+
+---
+
+## List all platform configs
+
+`GET /api/platform-configs`
+
+Returns all platform configs with secrets masked.
+
+```bash
+curl -X GET https://your-domain.com/api/platform-configs \
+  -H "Authorization: Bearer <api-key>"
+```
+
+**Response `200`**
+
+<ResponseField name="data.items" type="array">
+  List of platform config objects. `accessToken` and `webhookSecret` are replaced with `***`.
+</ResponseField>
+
+---
+
+## List enabled platform configs
+
+`GET /api/platform-configs/enabled`
+
+Returns only platform configs with `enabled: true`.
+
+---
+
+## List platform configs by type
+
+`GET /api/platform-configs/type/:platformType`
+
+<ParamField path="platformType" type="string" required>
+  `gitlab` | `github`
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data.configs" type="array">
+  Platform configs of the specified type.
+</ResponseField>
+
+---
+
+## Get default platform config
+
+`GET /api/platform-configs/default`
+
+Returns the platform config marked as `isDefault: true`, or `null` if none is set.
+
+**Response `200`**
+
+<ResponseField name="data.config" type="object | null">
+  The default platform config, or `null`.
+</ResponseField>
+
+---
+
+## Get a platform config
+
+`GET /api/platform-configs/:id`
+
+<ParamField path="id" type="string" required>
+  UUID of the platform config.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data.config" type="object">
+  Platform config with secrets masked.
+</ResponseField>
+
+---
+
+## Get decrypted access token
+
+`GET /api/platform-configs/:id/access-token`
+
+Returns the decrypted access token. Requires the **admin** role.
+
+<ParamField path="id" type="string" required>
+  UUID of the platform config.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data.accessToken" type="string">
+  The raw, decrypted access token.
+</ResponseField>
+
+---
+
+## Create a platform config
+
+`POST /api/platform-configs`
+
+Creates a new platform connection. Requires `config:create` permission.
+
+For GitLab with `authType: token`, the server validates that the access token has the required `api` scope before saving.
+
+```bash
+curl -X POST https://your-domain.com/api/platform-configs \
+  -H "Authorization: Bearer <api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Company GitLab",
+    "platformType": "gitlab",
+    "baseUrl": "https://gitlab.example.com",
+    "authType": "token",
+    "accessToken": "glpat-xxxx",
+    "webhookSecret": "my-secret",
+    "enabled": true,
+    "isDefault": true
+  }'
+```
+
+**Response `200`**
+
+<ResponseField name="data.config" type="object">
+  The newly created platform config with secrets masked.
+</ResponseField>
+
+---
+
+## Update a platform config
+
+`PATCH /api/platform-configs/:id`
+
+Partially updates an existing platform config. Requires `config:update` permission.
+
+<ParamField path="id" type="string" required>
+  UUID of the platform config to update.
+</ParamField>
+
+The request body accepts any subset of the [platform config schema](#platform-config-schema) fields.
+
+**Response `200`**
+
+<ResponseField name="data.config" type="object">
+  Updated platform config with secrets masked.
+</ResponseField>
+
+---
+
+## Set as default
+
+`POST /api/platform-configs/:id/default`
+
+Marks the specified platform config as the default. Requires `config:update` permission.
+
+<ParamField path="id" type="string" required>
+  UUID of the platform config to promote.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data.config" type="object">
+  Updated platform config.
+</ResponseField>
+
+---
+
+## Delete a platform config
+
+`DELETE /api/platform-configs/:id`
+
+Deletes a platform config. Requires `config:delete` permission.
+
+If associated projects exist, the request fails with `400` unless the `force=true` query parameter is provided, which deletes the config and all its associated projects.
+
+<ParamField path="id" type="string" required>
+  UUID of the platform config to delete.
+</ParamField>
+
+<ParamField query="force" type="string">
+  Pass `true` to also delete all projects linked to this config.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data.success" type="boolean">
+  `true` on successful deletion.
+</ResponseField>
+
+<ResponseField name="data.deletedProjects" type="number">
+  Number of associated projects deleted (non-zero only when `force=true`).
+</ResponseField>
+
+---
+
+## Test a connection
+
+`POST /api/platform-configs/test-connection`
+
+Tests whether the provided credentials can successfully connect to the platform. Requires `config:update` permission.
+
+**Request body**
+
+<ParamField body="platformType" type="string" required>
+  `gitlab` | `github`
+</ParamField>
+
+<ParamField body="baseUrl" type="string" required>
+  Platform base URL.
+</ParamField>
+
+<ParamField body="accessToken" type="string">
+  Access token to test.
+</ParamField>
+
+<ParamField body="authType" type="string">
+  `token` | `oauth`. Default: `token`.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data.success" type="boolean">
+  `true` if the connection succeeded and at least one project was found.
+</ResponseField>
+
+<ResponseField name="data.message" type="string">
+  Human-readable result description.
+</ResponseField>
+
+<ResponseField name="data.details" type="object">
+  Additional details such as whether any projects were returned.
+</ResponseField>
+
+---
+
+## GitLab user search
+
+`GET /api/platform-configs/:id/gitlab/users`
+
+Searches GitLab users using the credentials of the specified platform config. Useful for populating reviewer pickers.
+
+<ParamField path="id" type="string" required>
+  UUID of a GitLab platform config.
+</ParamField>
+
+<ParamField query="search" type="string">
+  Search term.
+</ParamField>
+
+<ParamField query="projectId" type="string">
+  Limit results to members of a specific platform project.
+</ParamField>
+
+<ParamField query="page" type="number">
+  Page number. Default: `1`.
+</ParamField>
+
+<ParamField query="perPage" type="number">
+  Items per page. Default: `20`, max: `100`.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data.users" type="array">
+  <Expandable title="User fields">
+    <ResponseField name="id" type="string">GitLab user ID.</ResponseField>
+    <ResponseField name="username" type="string">GitLab username.</ResponseField>
+    <ResponseField name="name" type="string">Display name.</ResponseField>
+    <ResponseField name="avatarUrl" type="string">Avatar URL.</ResponseField>
+    <ResponseField name="state" type="string">Account state.</ResponseField>
+    <ResponseField name="webUrl" type="string">Profile URL.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## GitLab OAuth2 flow
+
+For `authType: oauth`, use the following endpoints to complete the OAuth2 authorization code flow.
+
+### Get the GitLab authorization URL
+
+`POST /api/platform-configs/oauth/gitlab/auth-url`
+
+Generates the GitLab OAuth2 authorization URL to redirect the user to.
+
+<ParamField body="platformConfigId" type="string" required>
+  UUID of the platform config with `authType: oauth`.
+</ParamField>
+
+<ParamField body="redirectUri" type="string" required>
+  The callback URL registered in your GitLab application.
+</ParamField>
+
+### Exchange the authorization code
+
+`POST /api/platform-configs/oauth/gitlab/callback`
+
+Exchanges the authorization code from GitLab for an access token and stores it.
+
+<ParamField body="platformConfigId" type="string" required>
+  UUID of the platform config.
+</ParamField>
+
+<ParamField body="code" type="string" required>
+  Authorization code from GitLab.
+</ParamField>
+
+<ParamField body="redirectUri" type="string" required>
+  Must match the `redirectUri` used in the authorization step.
+</ParamField>
+
+### Refresh the access token
+
+`POST /api/platform-configs/oauth/gitlab/refresh`
+
+Uses the stored refresh token to obtain a new access token.
+
+<ParamField body="platformConfigId" type="string" required>
+  UUID of the platform config to refresh.
+</ParamField>

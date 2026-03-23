@@ -1,0 +1,492 @@
+---
+title: Reviews
+description: Endpoints for triggering AI code reviews, querying review results, and accessing review details such as comments, files, rounds, and AI logs.
+---
+
+All review endpoints are under `/api/reviews` and require authentication.
+
+---
+
+## List reviews
+
+`GET /api/reviews`
+
+Returns a paginated list of review history records, optionally filtered by project, status, or date range.
+
+```bash
+curl -X GET "https://your-domain.com/api/reviews?page=1&pageSize=20" \
+  -H "Authorization: Bearer <api-key>"
+```
+
+**Query parameters**
+
+<ParamField query="page" type="number">
+  Page number (1-indexed). Default: `1`.
+</ParamField>
+
+<ParamField query="pageSize" type="number">
+  Items per page. Default: `20`.
+</ParamField>
+
+<ParamField query="projectId" type="string">
+  Filter by project UUID.
+</ParamField>
+
+<ParamField query="status" type="string">
+  Filter by review status. Values: `pending`, `completed`, `failed`.
+</ParamField>
+
+<ParamField query="startDate" type="string">
+  ISO 8601 start date for date range filter.
+</ParamField>
+
+<ParamField query="endDate" type="string">
+  ISO 8601 end date for date range filter.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data.items" type="array">
+  List of review history objects.
+
+  <Expandable title="Review history fields">
+    <ResponseField name="id" type="string">Review UUID.</ResponseField>
+    <ResponseField name="projectId" type="string">Project UUID.</ResponseField>
+    <ResponseField name="projectName" type="string">Human-readable project name.</ResponseField>
+    <ResponseField name="mrIid" type="number">MR / PR number on the platform.</ResponseField>
+    <ResponseField name="mrTitle" type="string">MR / PR title.</ResponseField>
+    <ResponseField name="mrUrl" type="string">URL to the MR / PR on the platform.</ResponseField>
+    <ResponseField name="status" type="string">`pending` | `completed` | `failed`</ResponseField>
+    <ResponseField name="aiProvider" type="string">AI provider used for this review.</ResponseField>
+    <ResponseField name="aiModel" type="string">Model identifier.</ResponseField>
+    <ResponseField name="commentCount" type="number">Number of review comments posted.</ResponseField>
+    <ResponseField name="triggeredBy" type="string">`auto` | `manual`</ResponseField>
+    <ResponseField name="overallRating" type="string">Rating grade: `A`, `B`, `C`, `D`, or `F`.</ResponseField>
+    <ResponseField name="summary" type="string">AI-generated review summary.</ResponseField>
+    <ResponseField name="createdAt" type="string">ISO 8601 timestamp.</ResponseField>
+    <ResponseField name="completedAt" type="string | null">ISO 8601 timestamp when the review finished.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="data.stats" type="object">
+  Aggregate statistics for the filtered result set.
+</ResponseField>
+
+<ResponseField name="meta.pagination" type="object">
+  Standard pagination metadata.
+</ResponseField>
+
+---
+
+## Trigger a manual review
+
+`POST /api/reviews/trigger-manual-review`
+
+Manually queues an AI review for a specific merge request or pull request. Returns `202 Accepted` with a task ID you can poll for status.
+
+Requires the `review:create` permission.
+
+```bash
+curl -X POST https://your-domain.com/api/reviews/trigger-manual-review \
+  -H "Authorization: Bearer <api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "projectId": "<project-uuid>",
+    "mrIid": 42,
+    "sendToPlatform": true,
+    "templateId": "<template-uuid>"
+  }'
+```
+
+**Request body**
+
+<ParamField body="projectId" type="string" required>
+  UUID of the project to review.
+</ParamField>
+
+<ParamField body="mrIid" type="number" required>
+  Internal MR / PR number on the platform (the `!42` or `#42` number).
+</ParamField>
+
+<ParamField body="sendToPlatform" type="boolean">
+  Whether to post review comments back to GitLab / GitHub. Defaults to the project setting.
+</ParamField>
+
+<ParamField body="templateId" type="string">
+  UUID of the review template to use. Defaults to the project or global default.
+</ParamField>
+
+**Response `202`**
+
+<ResponseField name="data.queued" type="boolean">
+  `true` when the task was successfully queued.
+</ResponseField>
+
+<ResponseField name="data.task" type="object">
+  <Expandable title="Task fields">
+    <ResponseField name="id" type="string">Task ID for polling.</ResponseField>
+    <ResponseField name="status" type="string">`queued` | `failed`</ResponseField>
+    <ResponseField name="sentToPlatform" type="boolean">Whether comments will be posted to the platform.</ResponseField>
+    <ResponseField name="location" type="string">URL path to poll for task status.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Get review details
+
+`GET /api/reviews/:reviewId`
+
+Returns full details for a single review.
+
+```bash
+curl -X GET https://your-domain.com/api/reviews/<review-uuid> \
+  -H "Authorization: Bearer <api-key>"
+```
+
+<ParamField path="reviewId" type="string" required>
+  UUID of the review.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data.review" type="object">
+  Full review record. Same fields as the list response items, plus `baseCommitSha`, `headCommitSha`, `roundNumber`, `appliedRuleIds`, and `reviewedLines`.
+</ResponseField>
+
+---
+
+## List review comments
+
+`GET /api/reviews/:reviewId/comments`
+
+Returns AI-generated comments for a review with optional filtering.
+
+```bash
+curl -X GET "https://your-domain.com/api/reviews/<review-uuid>/comments?severity=error" \
+  -H "Authorization: Bearer <api-key>"
+```
+
+<ParamField path="reviewId" type="string" required>
+  UUID of the review.
+</ParamField>
+
+<ParamField query="filePath" type="string">
+  Filter comments to a specific file path.
+</ParamField>
+
+<ParamField query="severity" type="string">
+  Filter by severity. Values: `info`, `warning`, `error`.
+</ParamField>
+
+<ParamField query="limit" type="number">
+  Maximum number of comments to return. Default: `20`.
+</ParamField>
+
+<ParamField query="offset" type="number">
+  Number of comments to skip for pagination. Default: `0`.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data.items" type="array">
+  <Expandable title="Comment fields">
+    <ResponseField name="id" type="string">Comment UUID.</ResponseField>
+    <ResponseField name="reviewId" type="string">Parent review UUID.</ResponseField>
+    <ResponseField name="filePath" type="string">File path the comment references.</ResponseField>
+    <ResponseField name="lineNumber" type="number">Line number in the diff.</ResponseField>
+    <ResponseField name="severity" type="string">`info` | `warning` | `error`</ResponseField>
+    <ResponseField name="message" type="string">The review comment text.</ResponseField>
+    <ResponseField name="gitlabDiscussionId" type="string | null">GitLab discussion ID if the comment was posted.</ResponseField>
+    <ResponseField name="createdAt" type="string">ISO 8601 timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## List review files
+
+`GET /api/reviews/:reviewId/files`
+
+Returns the files that were reviewed.
+
+<ParamField path="reviewId" type="string" required>
+  UUID of the review.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data.files" type="array">
+  <Expandable title="File fields">
+    <ResponseField name="id" type="string">File record UUID.</ResponseField>
+    <ResponseField name="filePath" type="string">File path relative to repository root.</ResponseField>
+    <ResponseField name="oldPath" type="string | null">Previous path for renamed files.</ResponseField>
+    <ResponseField name="changeType" type="string">`new` | `modified` | `deleted` | `renamed`</ResponseField>
+    <ResponseField name="summary" type="string | null">AI-generated summary for the file.</ResponseField>
+    <ResponseField name="commentCount" type="number">Number of comments on this file.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Get file review progress
+
+`GET /api/reviews/:reviewId/files/progress`
+
+Returns per-file processing progress and prompt summary for an in-progress or completed review.
+
+<ParamField path="reviewId" type="string" required>
+  UUID of the review.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data.files" type="array">
+  Array of file progress objects, each containing the file path and current processing status.
+</ResponseField>
+
+---
+
+## Retry a single file review
+
+`POST /api/reviews/:reviewId/files/:fileId/retry`
+
+Re-runs the AI review for a single file within an existing review. Requires `review:create` permission.
+
+<ParamField path="reviewId" type="string" required>
+  UUID of the review.
+</ParamField>
+
+<ParamField path="fileId" type="string" required>
+  UUID of the review file record to retry.
+</ParamField>
+
+---
+
+## List review rounds
+
+`GET /api/reviews/:reviewId/rounds`
+
+Returns all review rounds. Multi-round reviews are used for differential re-reviews after new commits.
+
+<ParamField path="reviewId" type="string" required>
+  UUID of the review.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data.rounds" type="array">
+  <Expandable title="Round fields">
+    <ResponseField name="id" type="string">Round UUID.</ResponseField>
+    <ResponseField name="roundNumber" type="number">Sequential round number starting at 1.</ResponseField>
+    <ResponseField name="isDifferential" type="boolean">Whether this round only reviewed changed files since the previous round.</ResponseField>
+    <ResponseField name="createdAt" type="string">ISO 8601 timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## List review feedbacks
+
+`GET /api/reviews/:reviewId/feedbacks`
+
+Returns user feedback records (positive / negative) for a review's comments.
+
+<ParamField path="reviewId" type="string" required>
+  UUID of the review.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data.feedbacks" type="array">
+  <Expandable title="Feedback fields">
+    <ResponseField name="id" type="string">Feedback UUID.</ResponseField>
+    <ResponseField name="feedbackType" type="string">`positive` | `negative`</ResponseField>
+    <ResponseField name="trackingStatus" type="string">`pending` | `accepted` | `rejected` | `implemented`</ResponseField>
+    <ResponseField name="username" type="string | null">User who gave the feedback.</ResponseField>
+    <ResponseField name="createdAt" type="string">ISO 8601 timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Get AI call logs
+
+`GET /api/reviews/:reviewId/ai-logs`
+
+Returns a log of every AI API call made during the review, including token usage and response times.
+
+<ParamField path="reviewId" type="string" required>
+  UUID of the review.
+</ParamField>
+
+<ParamField query="limit" type="number">
+  Maximum number of log entries to return. Default: `50`, max: `200`.
+</ParamField>
+
+<ParamField query="offset" type="number">
+  Number of entries to skip. Default: `0`.
+</ParamField>
+
+<ParamField query="provider" type="string">
+  Filter by AI provider name.
+</ParamField>
+
+<ParamField query="status" type="string">
+  Filter by call status (e.g., `success`, `failed`).
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data.items" type="array">
+  <Expandable title="AI log fields">
+    <ResponseField name="id" type="string">Log entry UUID.</ResponseField>
+    <ResponseField name="provider" type="string">AI provider name.</ResponseField>
+    <ResponseField name="model" type="string">Model identifier.</ResponseField>
+    <ResponseField name="status" type="string">Call outcome: `success` | `failed`.</ResponseField>
+    <ResponseField name="durationMs" type="number">Round-trip duration in milliseconds.</ResponseField>
+    <ResponseField name="promptTokens" type="number">Tokens in the prompt.</ResponseField>
+    <ResponseField name="completionTokens" type="number">Tokens in the completion.</ResponseField>
+    <ResponseField name="totalTokens" type="number">Total tokens consumed.</ResponseField>
+    <ResponseField name="filePath" type="string | null">File being reviewed at call time.</ResponseField>
+    <ResponseField name="createdAt" type="string">ISO 8601 timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Get execution logs
+
+`GET /api/reviews/:reviewId/logs`
+
+Returns runner / executor execution logs for a review.
+
+<ParamField path="reviewId" type="string" required>
+  UUID of the review.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data" type="object">
+  Execution log data for the review's runner task.
+</ResponseField>
+
+---
+
+## List all review tasks
+
+`GET /api/reviews/tasks`
+
+Returns a paginated list of all review queue tasks (both automatic and manual).
+
+<ParamField query="page" type="number">
+  Page number. Default: `1`.
+</ParamField>
+
+<ParamField query="pageSize" type="number">
+  Items per page. Default: `20`.
+</ParamField>
+
+<ParamField query="status" type="string">
+  Filter by task status (e.g., `pending`, `completed`, `failed`).
+</ParamField>
+
+---
+
+## Manual review helper endpoints
+
+### Get projects available for manual review
+
+`GET /api/reviews/manual/projects`
+
+Returns projects that are enabled and can have a manual review triggered.
+
+### Get manual review history
+
+`GET /api/reviews/manual/history`
+
+<ParamField query="limit" type="number">
+  Number of recent entries to return. Min: `1`, max: `20`, default: `5`.
+</ParamField>
+
+### Get merge requests for a project
+
+`GET /api/reviews/manual/merge-requests`
+
+Fetches open MRs / PRs from the platform for use in the manual review dialog.
+
+<ParamField query="projectId" type="string" required>
+  UUID of the project.
+</ParamField>
+
+<ParamField query="state" type="string">
+  MR state filter: `all` | `opened` | `merged` | `closed`. Default: `opened`.
+</ParamField>
+
+<ParamField query="search" type="string">
+  Search term to filter MRs by title.
+</ParamField>
+
+### Get recent manual tasks
+
+`GET /api/reviews/manual/tasks/recent`
+
+<ParamField query="limit" type="number">
+  Number of tasks to return. Default: `5`.
+</ParamField>
+
+### Get manual task status
+
+`GET /api/reviews/manual/tasks/:taskId`
+
+Poll the status of a specific manual review task.
+
+<ParamField path="taskId" type="string" required>
+  Task ID returned by the trigger endpoint.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data.task" type="object">
+  Task record including `id`, `status`, `reviewId`, and timestamps.
+</ResponseField>
+
+---
+
+## List review templates
+
+`GET /api/reviews/templates/all`
+
+Returns all available review prompt templates.
+
+**Response `200`**
+
+<ResponseField name="data.templates" type="array">
+  <Expandable title="Template fields">
+    <ResponseField name="id" type="string">Template UUID.</ResponseField>
+    <ResponseField name="name" type="string">Template display name.</ResponseField>
+    <ResponseField name="description" type="string | null">Optional description.</ResponseField>
+    <ResponseField name="isDefault" type="boolean">Whether this is the global default template.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## List review rules
+
+`GET /api/reviews/rules/all`
+
+Returns all configured review rules (file pattern matching, severity filters, etc.).
+
+**Response `200`**
+
+<ResponseField name="data.rules" type="array">
+  <Expandable title="Rule fields">
+    <ResponseField name="id" type="string">Rule UUID.</ResponseField>
+    <ResponseField name="ruleName" type="string">Rule display name.</ResponseField>
+    <ResponseField name="enabled" type="boolean">Whether the rule is active.</ResponseField>
+    <ResponseField name="fileTypePatterns" type="array">Glob patterns for file extensions to match.</ResponseField>
+    <ResponseField name="filePathPatterns" type="array">Glob patterns for file paths to match.</ResponseField>
+    <ResponseField name="priority" type="number">Rule evaluation order (higher = earlier).</ResponseField>
+  </Expandable>
+</ResponseField>

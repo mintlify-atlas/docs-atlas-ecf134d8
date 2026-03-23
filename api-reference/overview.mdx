@@ -1,0 +1,109 @@
+---
+title: API Overview
+description: An introduction to the AI Review REST API, including base URL, response format, authentication, and available endpoint groups.
+---
+
+The AI Review API is a JSON REST API. All endpoints are served from the same server that hosts the web dashboard.
+
+## Base URL
+
+Every endpoint is prefixed with `/api`:
+
+```
+https://your-domain.com/api
+```
+
+Replace `your-domain.com` with the hostname where you deployed AI Review.
+
+## Response format
+
+All responses follow a shared envelope from the `@ai-review/contracts` package:
+
+```json
+{
+  "data": { ... },
+  "meta": {
+    "pagination": {
+      "page": 1,
+      "pageSize": 20,
+      "total": 42,
+      "totalPages": 3
+    }
+  },
+  "error": null
+}
+```
+
+<ResponseField name="data" type="object">
+  The response payload. Shape varies per endpoint.
+</ResponseField>
+
+<ResponseField name="meta" type="object">
+  Optional metadata. Paginated list endpoints always include `meta.pagination`.
+
+  <Expandable title="meta.pagination fields">
+    <ResponseField name="page" type="number">Current page number (1-indexed).</ResponseField>
+    <ResponseField name="pageSize" type="number">Number of items per page.</ResponseField>
+    <ResponseField name="total" type="number">Total number of matching items.</ResponseField>
+    <ResponseField name="totalPages" type="number">Total number of pages.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="error" type="object | null">
+  Present when the request fails. Contains `title`, `status`, and optionally `detail`.
+</ResponseField>
+
+## Authentication
+
+The API supports two authentication methods:
+
+- **Session cookie** — used automatically by the web dashboard after login.
+- **API key** — pass an API key generated from the dashboard in the `Authorization` header:
+  ```
+  Authorization: Bearer <api-key>
+  ```
+
+See [Authentication](/api-reference/authentication) for full details.
+
+## Rate limiting
+
+Rate-limiting middleware is registered globally. The default limits are configured at the server level. If you exceed the limit you will receive a `429 Too Many Requests` response.
+
+## Error responses
+
+The API uses standard HTTP status codes:
+
+| Status | Meaning |
+|--------|---------|
+| `200` | Success |
+| `202` | Accepted (async operation queued) |
+| `400` | Bad request / validation error |
+| `401` | Unauthenticated |
+| `403` | Forbidden — insufficient permissions |
+| `404` | Resource not found |
+| `429` | Rate limit exceeded |
+| `500` | Internal server error |
+
+Error bodies follow the same envelope structure with a non-null `error` field:
+
+```json
+{
+  "error": {
+    "title": "NOT_FOUND",
+    "status": 404,
+    "detail": "Review not found"
+  }
+}
+```
+
+## Endpoint groups
+
+| Group | Base path | Description |
+|-------|-----------|-------------|
+| [Reviews](/api-reference/reviews) | `/api/reviews` | Trigger and query AI code reviews |
+| [Projects](/api-reference/projects) | `/api/projects` | Manage synced projects and webhook configuration |
+| [Platform Configs](/api-reference/platform-configs) | `/api/platform-configs` | Manage GitLab / GitHub platform connections |
+| [Runners](/api-reference/runners) | `/api/runners` | Register and monitor external review runners |
+| [Notifications](/api-reference/notifications) | `/api/notifications` | Manage notification config and history |
+| [Webhooks](/api-reference/webhooks) | `/api/webhook` | Receive events from GitLab and GitHub |
+| [Health](/api-reference/health) | `/api/health` | Server health and readiness checks |

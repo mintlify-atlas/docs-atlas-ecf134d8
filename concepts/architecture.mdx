@@ -1,0 +1,166 @@
+---
+title: Architecture
+description: Overview of the three-component system architecture powering AI Review.
+---
+
+AI Review is a monorepo platform made up of three runtime units that work together to deliver automated code review:
+
+<CardGroup cols={3}>
+  <Card title="server" icon="server">
+    Hono API service. Handles webhooks, review orchestration, configuration, notifications, monitoring, and static asset hosting.
+  </Card>
+  <Card title="web" icon="layout-dashboard">
+    React 19 admin dashboard. Provides login, project config, review history, runner management, trend analysis, and system settings.
+  </Card>
+  <Card title="runner" icon="play">
+    Isolated executor. Polls the server for tasks and executes code reviews inside a Docker container.
+  </Card>
+</CardGroup>
+
+## Request flow
+
+```text
+┌─────────────────────────────────────────────────────────┐
+│                       Browser                           │
+│                    (apps/web)                           │
+└─────────────────────┬───────────────────────────────────┘
+                      │ HTTP /api/*
+                      ▼
+┌─────────────────────────────────────────────────────────┐
+│                  apps/server                            │
+│                                                         │
+│  index.ts → app.factory.ts → /api sub-app               │
+│                                                         │
+│  Middleware stack:                                      │
+│    CORS → Request ID → Trace → Logger                   │
+│    → Secure Headers → Body Limit → Timeout → Rate Limit │
+│                                                         │
+│  modules.generated.ts (route registry)                  │
+│    ↓                                                    │
+│  Business module routes                                 │
+│    ↓                                                    │
+│  Services / lib  →  PostgreSQL (Drizzle ORM)            │
+│                  →  BullMQ queue (Redis)                │
+└─────────────────────┬───────────────────────────────────┘
+                      │ HTTP task poll
+                      ▼
+┌─────────────────────────────────────────────────────────┐
+│                  apps/runner                            │
+│                                                         │
+│  Poll tasks → Docker executor → Report results          │
+└─────────────────────────────────────────────────────────┘
+```
+
+## Server directory layout
+
+The server source lives under `apps/server/src/`:
+
+```text
+apps/server/src/
+├── app/           # Application factory and graceful shutdown
+├── common/        # Shared errors and decorators
+├── config/        # Active capability config (e.g. AI providers)
+├── constants/     # Constant definitions
+├── db/            # Drizzle client and schema
+├── lib/           # AI, platform integrations, notifications,
+│                  # queue, logger, auth utilities
+├── middlewares/   # API middleware
+├── modules/       # Business modules
+├── schemas/       # Shared Zod schemas
+├── types/         # TypeScript type definitions
+└── env.ts         # Environment variable definitions
+```
+
+## Infrastructure
+
+### Database
+
+PostgreSQL is the primary data store, accessed through [Drizzle ORM](https://orm.drizzle.team). The main schema is defined in `db/schemas/index.ts` and covers projects, reviews, files, comments, rules, templates, ratings, feedback, runners, notifications, and chat sessions.
+
+Required environment variable: `DATABASE_URL`.
+
+### Queue
+
+Asynchronous work (review tasks, runner task dispatch) uses [BullMQ](https://docs.bullmq.io) backed by Redis.
+
+<Warning>
+  BullMQ requires a running Redis instance. The queue is not an optional in-memory fallback — `REDIS_URL` must be set.
+</Warning>
+
+### Auth
+
+[Better Auth](https://www.better-auth.com) provides two authentication modes:
+
+- **Session auth** — browser cookie, used by the web dashboard
+- **API key auth** — used by runners and API consumers
+
+All API routes are served under the `/api` prefix. Auth endpoints are mounted at `/api/auth/*`.
+
+## Module registration
+
+Business module routes are registered explicitly in `modules/modules.generated.ts`. Unlike auto-discovery frameworks, each module must be added to the `moduleRoutes` array manually:
+
+```typescript
+// apps/server/src/modules/modules.generated.ts
+export const moduleRoutes: ModuleRouteConfig[] = [
+  { prefix: '/webhook', router: webhookRoutes },
+  { prefix: '/reviews', router: reviewsRoutes },
+  { prefix: '/runners', router: runnersRoutes },
+  // ... all other modules
+]
+```
+
+<Note>
+  Adding a new module requires updating `modules.generated.ts`. The file is labelled "generated" for historical reasons but is currently maintained by hand.
+</Note>
+
+## Middleware stack
+
+Every request to `/api` passes through this ordered middleware chain:
+
+| Middleware | Purpose |
+|---|---|
+| CORS | Cross-origin resource sharing headers |
+| Request ID | Attaches a unique ID to each request |
+| Trace | Distributed tracing support |
+| Logger | Structured request/response logging |
+| Secure Headers | Security-related HTTP headers |
+| Body Limit | Guards against oversized request bodies |
+| Timeout | Terminates requests that run too long |
+| Rate Limit | Throttles excessive clients |
+
+## Production mode
+
+In production, the server hosts the compiled frontend assets alongside the API. This means you only need to deploy `apps/server` — it serves both `/api/*` and the static web dashboard from the same process.
+
+```text
+GET /          → static frontend (apps/web/dist)
+GET /api/*     → Hono API handlers
+```
+
+During Docker builds, `apps/web/dist` is copied into `apps/server/dist/public`.
+
+## Business modules
+
+The following modules are registered in the current codebase:
+
+<CardGroup cols={2}>
+  <Card title="Review pipeline">
+    `reviews`, `review-details`, `rounds`, `webhook`
+  </Card>
+  <Card title="AI & configuration">
+    `ai-configs`, `ai-models`, `platform-configs`, `config`
+  </Card>
+  <Card title="Projects & rules">
+    `projects`, `rules`, `templates`, `ratings`, `feedbacks`
+  </Card>
+  <Card title="Runners">
+    `runners`
+  </Card>
+  <Card title="System operations">
+    `health`, `monitoring`, `performance`, `logs`, `backup`, `systems`
+  </Card>
+  <Card title="Analytics & comms">
+    `statistics`, `trends`, `notifications`, `chat`, `chat-sessions`
+  </Card>
+</CardGroup>

@@ -1,0 +1,132 @@
+---
+title: GitLab Integration
+description: Connect AI Review to GitLab (SaaS or self-hosted) to automatically review merge requests.
+---
+
+AI Review integrates with GitLab by receiving webhook events from your GitLab instance and posting review comments back on merge requests. This page walks you through setting up the connection.
+
+## Prerequisites
+
+Before you begin, gather the following:
+
+- **GitLab base URL** — `https://gitlab.com` for GitLab SaaS, or your private instance address (e.g. `https://gitlab.example.com`).
+- **Access token** — A GitLab personal access token or project access token.
+- **Webhook secret** — A secret string you choose; it will be used to verify that webhook payloads come from GitLab.
+
+<Warning>
+The access token must have sufficient permissions to read projects and post comments on merge requests. For a personal access token, the `api` scope is required. Without the correct scope, project sync and comment posting will fail.
+</Warning>
+
+## Setup
+
+<Steps>
+  <Step title="Add a platform configuration">
+    In the AI Review dashboard, go to **Platform Configs** and click **Add**.
+
+    Fill in the fields:
+
+    | Field | Value |
+    |-------|-------|
+    | Name | A label for this connection (e.g. `GitLab SaaS`) |
+    | Platform type | `GitLab` |
+    | Base URL | Your GitLab instance URL |
+    | Access token | Your GitLab access token |
+    | Webhook secret | The secret string you chose |
+
+    Save the configuration. The platform config will appear in the list with its status.
+  </Step>
+
+  <Step title="Sync projects">
+    Go to **Project Management** and click **Sync**.
+
+    Select the platform configuration you just created and start the sync. AI Review will fetch all accessible projects from your GitLab instance and import them into the project list.
+
+    <Note>
+    If the sync fails, verify that the base URL is reachable from the AI Review server and that the access token has the correct permissions.
+    </Note>
+  </Step>
+
+  <Step title="Enable auto-review on a project">
+    In **Project Management**, locate the project you want to enable and open its settings.
+
+    Turn on **Auto Review**. You can also configure:
+
+    - The AI configuration to use for this project.
+    - Review templates.
+    - Default reviewers and assignees.
+  </Step>
+
+  <Step title="Configure the GitLab webhook">
+    In your GitLab project, go to **Settings → Webhooks** and add a new webhook.
+
+    ```
+    URL:    https://<your-ai-review-host>/api/webhook/gitlab
+    Secret: <the webhook secret you set in the platform config>
+    ```
+
+    Enable at minimum the **Merge request events** trigger. Click **Add webhook**.
+
+    AI Review reads the token from the `X-Gitlab-Token` request header to authenticate each delivery.
+  </Step>
+</Steps>
+
+## Supported events
+
+AI Review processes the following GitLab webhook events:
+
+| `object_kind` | `action` | Behavior |
+|---------------|----------|----------|
+| `merge_request` | `open` | Triggers auto-review and applies auto-assignments |
+| `merge_request` | `reopen` | Triggers auto-review and applies auto-assignments |
+| `merge_request` | `update` | Triggers auto-review (see filtering note below) |
+| `note` | — | Triggers manual review when the comment body starts with `/ai-review` |
+
+All other event types and actions are acknowledged with HTTP 200 but are not processed.
+
+### Assignment-only update filtering
+
+For `update` events, AI Review inspects the `changes` field of the payload. If the only changed keys are `assignee_id`, `assignee_ids`, `assignees`, `reviewer_ids`, `updated_at`, or `updated_by_id`, the event is ignored. This prevents a review from being re-triggered every time an assignee or reviewer is changed.
+
+### Review gate
+
+Receiving a webhook event does not unconditionally start a review. Before queuing a review job, AI Review checks:
+
+1. The project exists in the system (was synced).
+2. The project has review enabled.
+3. Auto-review is turned on for the project (for automatic triggers).
+4. An AI configuration is available for the project.
+5. The platform configuration is complete and enabled.
+
+If any check fails, the webhook returns HTTP 200 with a descriptive message and no review is queued.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Webhook delivers but no review is triggered">
+    Check the following in order:
+
+    1. **Webhook token mismatch** — The `X-Gitlab-Token` header sent by GitLab must exactly match the webhook secret stored in the platform configuration. Re-enter the secret on both sides if you are unsure.
+    2. **Project not synced** — The project must appear in **Project Management**. Run a sync if you recently added the project to GitLab.
+    3. **Project disabled** — Open the project settings in AI Review and confirm that **Auto Review** is enabled.
+    4. **AI configuration missing** — The project must have an AI configuration assigned. Go to the project settings and select or create an AI config.
+    5. **Platform configuration disabled** — In **Platform Configs**, verify that the configuration is enabled.
+  </Accordion>
+
+  <Accordion title="Project sync fails">
+    - Confirm the base URL is correct and the GitLab instance is reachable from the AI Review server.
+    - Verify the access token has the `api` scope and has not expired.
+    - Check that the token grants access to the projects you expect to import.
+  </Accordion>
+
+  <Accordion title="GitLab reports a webhook delivery failure">
+    - Confirm the webhook URL is reachable from GitLab (no firewall blocking outbound requests).
+    - Check that the URL path is exactly `/api/webhook/gitlab` with no trailing slash.
+    - Review the AI Review server logs for any errors returned during processing.
+  </Accordion>
+
+  <Accordion title="Review is triggered but no comment appears on the MR">
+    - Verify the access token has permission to post notes on merge requests.
+    - Check the AI Review server logs for errors from the GitLab API response.
+    - Confirm the project's AI configuration points to a working AI provider.
+  </Accordion>
+</AccordionGroup>

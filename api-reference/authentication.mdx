@@ -1,0 +1,67 @@
+---
+title: Authentication
+description: How to authenticate with the AI Review API using session cookies or API keys.
+---
+
+AI Review uses [Better Auth](https://better-auth.com) for authentication. Two methods are supported depending on your use case.
+
+## Session-based authentication (browser)
+
+When you log in to the web dashboard, Better Auth sets a secure HTTP-only session cookie. All subsequent requests from the browser automatically include this cookie.
+
+This method is not suitable for programmatic API access from outside the browser.
+
+## API key authentication
+
+For scripts, CI pipelines, and external tooling, use an API key.
+
+### Create an API key
+
+1. Log in to the web dashboard.
+2. Navigate to **Settings → API Keys**.
+3. Click **Generate new key** and copy the value — it is shown only once.
+
+### Use the API key
+
+Pass the key in the `Authorization` header:
+
+```bash
+curl -X GET https://your-domain.com/api/reviews \
+  -H "Authorization: Bearer <api-key>"
+```
+
+Alternatively, runners use the `x-api-key` header:
+
+```bash
+curl -X POST https://your-domain.com/api/runners/register \
+  -H "x-api-key: <api-key>"
+```
+
+<Note>
+  API keys are verified against the Better Auth API key store. Each key is tied to the user who created it and inherits that user's permissions.
+</Note>
+
+## Which endpoints require authentication
+
+| Endpoint | Auth required |
+|----------|---------------|
+| `GET /api/health` | No — public, used for load balancer checks |
+| `POST /api/webhook/gitlab` | No session required — validated by webhook token |
+| `POST /api/webhook/github` | No session required — validated by HMAC signature |
+| All other `/api/*` endpoints | Yes — session cookie or API key |
+
+## Permissions
+
+Some write operations additionally require specific permissions beyond being authenticated:
+
+- **`POST /api/reviews/trigger-manual-review`** — requires `review:create`
+- **`POST /api/projects/sync/platform`** — requires `project:create`
+- **`PATCH /api/projects/:projectId`** — requires `project:update`
+- **`POST /api/platform-configs`** — requires `config:create`
+- **`PATCH /api/platform-configs/:id`** — requires `config:update`
+- **`DELETE /api/platform-configs/:id`** — requires `config:delete`
+- **`GET /api/platform-configs/:id/access-token`** — requires admin role
+
+<Warning>
+  Store API keys securely. Never commit them to source control or expose them in client-side code.
+</Warning>

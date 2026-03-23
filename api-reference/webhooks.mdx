@@ -1,0 +1,147 @@
+---
+title: Webhooks
+description: Endpoints that receive webhook events from GitLab and GitHub to trigger automatic AI code reviews.
+---
+
+Webhook endpoints receive inbound events from Git platforms and trigger the review pipeline. They do **not** require session authentication — instead, each platform uses its own signature mechanism.
+
+<Warning>
+  Configure your platform webhook to point at the correct URL for your deployment. AI Review uses the webhook secret stored in the matching platform config to validate each request.
+</Warning>
+
+---
+
+## GitLab webhook
+
+`POST /api/webhook/gitlab`
+
+Receives GitLab webhook events.
+
+### Signature validation
+
+GitLab sends the webhook secret as the `X-Gitlab-Token` header. The server compares this value against the `webhookSecret` stored in the matching platform config. Requests with a missing or invalid token receive `401 Unauthorized`.
+
+### Supported events
+
+| GitLab event | `object_kind` | Triggering actions |
+|---|---|---|
+| Merge Request | `merge_request` | `open`, `update`, `reopen` |
+| Note (comment) | `note` | Any MR comment matching the review command |
+
+<Note>
+  `update` events that only change assignees or reviewers are silently ignored to prevent unnecessary review re-runs.
+</Note>
+
+### Review command
+
+Posting a recognized review command (e.g., `/review`) as a comment on a merge request triggers a manual review from the webhook, even when auto-review is disabled for the project.
+
+### Auto-assignment
+
+On `open` and `reopen` events, the server automatically assigns the MR author as assignee and applies any configured default reviewers if the project has `autoAssignAuthor` or `defaultReviewerIds` set.
+
+### Example curl
+
+```bash
+curl -X POST https://your-domain.com/api/webhook/gitlab \
+  -H "X-Gitlab-Token: <webhook-secret>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "object_kind": "merge_request",
+    "project": { "id": 123 },
+    "object_attributes": {
+      "iid": 42,
+      "action": "open"
+    }
+  }'
+```
+
+### Response
+
+**`200 OK`** — Event received and processed (or intentionally ignored).
+
+<ResponseField name="data.received" type="boolean">
+  Always `true` on a `200` response.
+</ResponseField>
+
+<ResponseField name="data.message" type="string">
+  Human-readable status message.
+</ResponseField>
+
+**`401 Unauthorized`** — Missing or invalid `X-Gitlab-Token`.
+
+**`400 Bad Request`** — Unrecognized event format or missing required fields.
+
+**`500 Internal Server Error`** — Review task could not be queued.
+
+---
+
+## GitHub webhook
+
+`POST /api/webhook/github`
+
+Receives GitHub webhook events.
+
+### Signature validation
+
+GitHub signs each payload with HMAC-SHA256 and sends the signature as the `X-Hub-Signature-256` header. The server verifies this signature against the `webhookSecret` in each GitHub platform config until a match is found. Requests that fail all verifications receive `401 Unauthorized`.
+
+### Required headers
+
+| Header | Description |
+|--------|-------------|
+| `X-Hub-Signature-256` | HMAC-SHA256 signature of the payload body |
+| `X-GitHub-Event` | GitHub event type (e.g., `pull_request`, `issue_comment`) |
+| `Content-Type` | Must be `application/json` |
+
+### Supported events
+
+| GitHub event | Triggering actions |
+|---|---|
+| `pull_request` | `opened`, `synchronize`, `reopened` |
+| `issue_comment` / `pull_request_review_comment` | Comments matching the review command |
+
+### Example curl
+
+```bash
+curl -X POST https://your-domain.com/api/webhook/github \
+  -H "X-Hub-Signature-256: sha256=<computed-hmac>" \
+  -H "X-GitHub-Event: pull_request" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "opened",
+    "pull_request": { "number": 7 },
+    "repository": { "id": 456 }
+  }'
+```
+
+### Response
+
+**`200 OK`** — Event received and processed (or intentionally ignored).
+
+<ResponseField name="data.received" type="boolean">
+  Always `true` on a `200` response.
+</ResponseField>
+
+<ResponseField name="data.message" type="string">
+  Human-readable status message.
+</ResponseField>
+
+**`401 Unauthorized`** — Missing signature or HMAC verification failed.
+
+**`400 Bad Request`** — Missing `X-GitHub-Event` header or unrecognized payload.
+
+**`404 Not Found`** — No GitHub platform config found.
+
+**`500 Internal Server Error`** — Review task could not be queued.
+
+---
+
+## What happens after a webhook is received
+
+1. The payload signature / token is validated against the stored platform config.
+2. The platform project ID is looked up in the database.
+3. The project's review settings are checked (enabled, auto-review, AI config).
+4. A review task is queued in the task queue.
+5. If a runner is available, it claims the task and begins execution.
+6. Upon completion, comments are posted back to the platform and notifications are dispatched.

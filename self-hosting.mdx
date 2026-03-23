@@ -1,0 +1,231 @@
+---
+title: Self-Hosting
+description: Deploy AI Review to production using Docker Compose.
+---
+
+AI Review ships a `docker-compose.yml` for production deployment. The server process serves both the `/api` routes and the compiled frontend static assets, so a single container is sufficient for most deployments.
+
+## Deployment modes
+
+<Tabs>
+  <Tab title="Single service">
+    One container runs the API and hosts the pre-built frontend. This is the default and simplest option.
+
+    ```
+    [Browser] → [ai-review-app :9000] → PostgreSQL + Redis
+    ```
+
+    Use this mode unless you need to isolate review execution from the API.
+  </Tab>
+  <Tab title="Server + Runner split">
+    The main service handles orchestration and the API. One or more Runner containers independently pull and execute review tasks.
+
+    ```
+    [Browser]  → [ai-review-app :9000] → PostgreSQL + Redis
+    [Runner 1] ↗
+    [Runner 2] ↗
+    ```
+
+    Use this mode when you want to run review execution in an isolated environment or scale reviewers independently.
+  </Tab>
+</Tabs>
+
+## System requirements
+
+- Node.js 18+
+- pnpm 10+
+- PostgreSQL
+- Redis (required — BullMQ has no in-memory fallback)
+- Docker
+- Writable directories for logs and backups
+- Docker socket access if using the Runner
+
+## Required environment variables
+
+| Variable | Description |
+| --- | --- |
+| `DATABASE_URL` | PostgreSQL connection string |
+| `BETTER_AUTH_SECRET` | Session secret — minimum 32 characters |
+
+<Warning>
+  Never use a weak or default value for `BETTER_AUTH_SECRET` in production. Generate a random string of at least 32 characters.
+</Warning>
+
+## Production deployment
+
+<Steps>
+  <Step title="Prepare environment variables">
+    Create a `.env.production` file in the repository root. At minimum:
+
+    ```bash
+    DATABASE_URL="postgresql://user:password@your-postgres-host:5432/ai_review"
+    BETTER_AUTH_SECRET=a-random-string-of-at-least-32-characters
+    REDIS_URL="redis://your-redis-host:6379"
+
+    NODE_ENV=production
+    PORT=3000
+    HOSTNAME=0.0.0.0
+
+    APP_URL=https://your-domain.example.com
+    APP_URLs=https://your-domain.example.com
+    BETTER_AUTH_URL=https://your-domain.example.com
+    WEBHOOK_BASE_URL=https://your-domain.example.com
+    ```
+
+    Recommended optional variables:
+
+    ```bash
+    AI_REVIEW_CONCURRENCY=3
+
+    LOG_DIR=./logs
+    LOG_LEVEL=info
+    LOG_RETENTION_DAYS=7
+
+    BACKUP_DIR=./backups
+    AUTO_BACKUP_ENABLED=false
+    BACKUP_RETENTION_DAYS=30
+
+    METRICS_RETENTION_DAYS=90
+
+    # Bootstrap admin account on first start
+    ROOT_EMAIL=admin@example.com
+    ROOT_PASSWORD=your-initial-admin-password
+    ```
+
+    For AI review and chat functionality, configure the Volcengine provider (the only currently activated runtime):
+
+    ```bash
+    VOLCENGINE_API_KEY=your-volcengine-api-key
+    VOLCENGINE_ENDPOINT=your-volcengine-endpoint
+    ```
+
+    <Note>
+      Other provider keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, etc.) are accepted by the environment schema for compatibility but are not active in the current codebase.
+    </Note>
+  </Step>
+
+  <Step title="Run database migrations">
+    Always run migrations before deploying a new version:
+
+    ```bash
+    pnpm --filter server db:migrate
+    ```
+
+    In production, the recommended order is:
+    1. Confirm a valid database backup exists.
+    2. Apply migrations.
+    3. Deploy and start the new container.
+  </Step>
+
+  <Step title="Build the production image">
+    Build the Docker image from the repository root:
+
+    ```bash
+    docker compose --env-file .env.production -f docker-compose.yml build
+    ```
+
+    The build copies the compiled frontend assets from `apps/web/dist` into `apps/server/dist/public` so the server can serve them statically.
+  </Step>
+
+  <Step title="Start the service">
+    ```bash
+    docker compose --env-file .env.production -f docker-compose.yml up -d
+    ```
+
+    The container maps **host port 9000** to **container port 3000**.
+
+    | Host | Container |
+    | --- | --- |
+    | 9000 | 3000 |
+  </Step>
+
+  <Step title="Verify the deployment">
+    Check that the service is healthy:
+
+    ```bash
+    curl http://localhost:9000/api/health
+    ```
+
+    Additional health endpoints:
+
+    ```bash
+    curl http://localhost:9000/api/health/status
+    curl http://localhost:9000/api/metrics
+    ```
+
+    Then confirm end-to-end functionality:
+    - Log in to the dashboard
+    - Verify platform configuration is readable
+    - Verify AI configuration is readable
+    - Trigger a project sync
+    - Open a test pull/merge request to confirm the review queue receives and processes the event
+  </Step>
+</Steps>
+
+## Running with the Runner
+
+To enable the Runner for isolated review execution, deploy it alongside the main service.
+
+<Steps>
+  <Step title="Set Runner environment variables">
+    ```bash
+    export RUNNER_SERVER_URL="http://host.docker.internal:3000"
+    export RUNNER_TOKEN="your-api-key"
+    export RUNNER_NAME="prod-runner-1"
+    export DOCKER_EXECUTOR_IMAGE="ai-review-executor:latest"
+    ```
+
+    `RUNNER_TOKEN` is an API key created in the AI Review dashboard under **Runner management**.
+  </Step>
+
+  <Step title="Build and start the Runner">
+    <CodeGroup>
+
+    ```bash Build
+    docker compose -f docker-compose.runner.yml build
+    ```
+
+    ```bash Start
+    docker compose -f docker-compose.runner.yml up -d
+    ```
+
+    </CodeGroup>
+
+    The Runner mounts `/var/run/docker.sock` to launch executor containers for each review job.
+  </Step>
+
+  <Step title="Monitor the Runner">
+    Watch Runner health and task activity from the dashboard's **Runner management** page, or check the log output directly:
+
+    ```bash
+    docker compose -f docker-compose.runner.yml logs -f runner
+    ```
+
+    Key operational concerns:
+    - Monitor Runner heartbeat status in the dashboard
+    - Tune `RUNNER_MAX_CONCURRENT_JOBS` to match available resources
+    - Ensure the Runner container can reach the main service over the network
+  </Step>
+</Steps>
+
+## Alternative: build and run without Docker
+
+If you prefer to run the compiled output directly on a host:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm build
+pnpm --filter server preview
+```
+
+The server reads static frontend files from `./public` relative to its working directory.
+
+## Upgrade checklist
+
+1. Record the current deployed commit SHA.
+2. Validate the migration plan on a staging environment first.
+3. Confirm a database backup is current and valid.
+4. Run `pnpm --filter server db:migrate` against the production database.
+5. Build and deploy the new image.
+6. Confirm `GET /api/health` returns healthy.
+7. Verify Runner registration, heartbeat, and task completion.

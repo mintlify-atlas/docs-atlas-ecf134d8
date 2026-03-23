@@ -1,0 +1,163 @@
+---
+title: GitHub Integration
+description: Connect AI Review to GitHub or GitHub Enterprise to automatically review pull requests.
+---
+
+AI Review integrates with GitHub by receiving webhook events and posting review comments back on pull requests. This page walks you through setting up the connection for both GitHub.com and GitHub Enterprise.
+
+## Prerequisites
+
+Before you begin, gather the following:
+
+- **GitHub base URL** — See the tabs below.
+- **Access token** — A GitHub personal access token or fine-grained token.
+- **Webhook secret** — A secret string you choose; GitHub will include an HMAC-SHA256 signature in every delivery so AI Review can verify authenticity.
+
+<Tabs>
+  <Tab title="GitHub.com">
+    Set the base URL to:
+
+    ```
+    https://api.github.com
+    ```
+
+    The access token must have the `repo` scope (or the equivalent fine-grained permissions: read access to repository contents and metadata, write access to pull request comments).
+  </Tab>
+  <Tab title="GitHub Enterprise">
+    Set the base URL to your enterprise instance address, for example:
+
+    ```
+    https://github.example.com
+    ```
+
+    AI Review automatically appends `/api/v3` when it detects a non-`github.com` URL, matching the GitHub Enterprise REST API path.
+
+    The access token must have the same scopes as GitHub.com.
+  </Tab>
+</Tabs>
+
+<Warning>
+The access token must have sufficient permissions to read repositories and post comments on pull requests. Without the correct scopes, project sync and comment posting will fail.
+</Warning>
+
+## Setup
+
+<Steps>
+  <Step title="Add a platform configuration">
+    In the AI Review dashboard, go to **Platform Configs** and click **Add**.
+
+    Fill in the fields:
+
+    | Field | Value |
+    |-------|-------|
+    | Name | A label for this connection (e.g. `GitHub.com`) |
+    | Platform type | `GitHub` |
+    | Base URL | `https://api.github.com` or your enterprise URL |
+    | Access token | Your GitHub access token |
+    | Webhook secret | The secret string you chose |
+
+    Save the configuration.
+  </Step>
+
+  <Step title="Sync projects">
+    Go to **Project Management** and click **Sync**.
+
+    Select the platform configuration you just created and start the sync. AI Review fetches all accessible repositories from GitHub and imports them into the project list.
+
+    <Note>
+    If the sync fails, verify the base URL is correct, the token has the right scopes, and the GitHub instance is reachable from the AI Review server.
+    </Note>
+  </Step>
+
+  <Step title="Enable auto-review on a project">
+    In **Project Management**, locate the repository you want to enable and open its settings.
+
+    Turn on **Auto Review**. You can also configure:
+
+    - The AI configuration to use for this project.
+    - Review templates.
+    - Default reviewers and assignees.
+  </Step>
+
+  <Step title="Configure the GitHub webhook">
+    In your GitHub repository, go to **Settings → Webhooks** and click **Add webhook**.
+
+    ```
+    Payload URL:    https://<your-ai-review-host>/api/webhook/github
+    Content type:   application/json
+    Secret:         <the webhook secret you set in the platform config>
+    ```
+
+    Under **Which events would you like to trigger this webhook?**, select at minimum:
+
+    - **Pull requests**
+    - **Issue comments** (required for the `/ai-review` manual trigger command)
+
+    Click **Add webhook**.
+
+    GitHub signs every delivery using HMAC-SHA256 and sends the signature in the `X-Hub-Signature-256` header. AI Review verifies this signature against all stored GitHub platform configurations before processing any event.
+  </Step>
+</Steps>
+
+## Supported events
+
+AI Review processes the following GitHub webhook events:
+
+| `x-github-event` header | `action` | Behavior |
+|-------------------------|----------|----------|
+| `pull_request` | `opened` | Triggers auto-review |
+| `pull_request` | `synchronize` | Triggers auto-review |
+| `pull_request` | `reopened` | Triggers auto-review |
+| `issue_comment` | `created` (on a PR) | Triggers manual review when the comment body starts with `/ai-review` |
+
+All other event types and actions are acknowledged with HTTP 200 but are not processed.
+
+### Manual trigger command
+
+Posting a comment on a pull request with the text `/ai-review` (optionally followed by arguments) triggers a manual review. The comment must be on a PR, not a plain issue.
+
+### Review gate
+
+Receiving a webhook event does not unconditionally start a review. Before queuing a review job, AI Review checks:
+
+1. The `X-Hub-Signature-256` signature is valid for at least one stored GitHub platform configuration.
+2. The repository exists in the system (was synced).
+3. The project has review enabled.
+4. Auto-review is turned on for the project (for automatic triggers).
+5. An AI configuration is available for the project.
+
+If any check fails, the webhook returns HTTP 200 with a descriptive message and no review is queued.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="X-Hub-Signature-256 verification fails">
+    AI Review validates the HMAC-SHA256 signature in the `X-Hub-Signature-256` header against every stored GitHub platform configuration. If none match, the request is rejected with HTTP 401.
+
+    - Confirm the webhook secret in GitHub exactly matches the webhook secret stored in the AI Review platform configuration.
+    - If you have multiple GitHub platform configurations, ensure at least one has the correct secret for this webhook.
+    - Re-enter the secret on both sides if you are unsure which value was saved.
+  </Accordion>
+
+  <Accordion title="Webhook delivers but no review is triggered">
+    Check the following in order:
+
+    1. **Project not synced** — The repository must appear in **Project Management**. Run a sync if you recently added the repository to GitHub.
+    2. **Project or auto-review disabled** — Open the project settings in AI Review and confirm that the project is enabled and **Auto Review** is turned on.
+    3. **AI configuration missing** — The project must have an AI configuration assigned. Go to the project settings and select or create an AI config.
+    4. **Unsupported event type** — Only `pull_request` events with actions `opened`, `synchronize`, and `reopened`, and `issue_comment` events on PRs are processed. Check the **Recent Deliveries** tab in the GitHub webhook settings to see which event type was sent.
+  </Accordion>
+
+  <Accordion title="Project sync fails">
+    - Confirm the base URL is correct for your setup (use `https://api.github.com` for GitHub.com).
+    - Verify the access token has not expired and has the `repo` scope.
+    - Check that the token grants access to the repositories you expect to import.
+    - Confirm the GitHub instance is reachable from the AI Review server.
+  </Accordion>
+
+  <Accordion title="Review is triggered but no comment appears on the PR">
+    - Verify the access token has permission to post comments on pull requests.
+    - Check the AI Review server logs for errors from the GitHub API response.
+    - Confirm the project's AI configuration points to a working AI provider.
+  </Accordion>
+</AccordionGroup>

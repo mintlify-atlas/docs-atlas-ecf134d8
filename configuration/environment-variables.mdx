@@ -1,0 +1,209 @@
+---
+title: Environment variables
+description: Complete reference for all environment variables used by AI Review.
+---
+
+Copy `.env.example` from the repository root to `.env` and fill in the required
+values before starting the server.
+
+## Required
+
+<ParamField path="DATABASE_URL" type="string" required>
+  PostgreSQL connection string.
+
+  Format: `postgresql://username:password@host:port/database`
+
+  Example: `postgresql://ai_review:ai_review@localhost:15432/ai_review`
+</ParamField>
+
+<ParamField path="BETTER_AUTH_SECRET" type="string" required>
+  Secret key used by Better Auth for session signing. Must be at least 32
+  characters long.
+</ParamField>
+
+## Server
+
+<ParamField path="NODE_ENV" type="string" default="development">
+  Runtime environment. Accepted values: `development`, `production`, `test`.
+</ParamField>
+
+<ParamField path="PORT" type="number" default="3000">
+  Port the API server listens on.
+</ParamField>
+
+<ParamField path="HOSTNAME" type="string" default="localhost">
+  Hostname or IP address the server binds to.
+</ParamField>
+
+<ParamField path="APP_URL" type="string (URL)">
+  Public URL of the application. Used as the canonical base URL and as the
+  default value for `APP_URLs` and `BETTER_AUTH_URL` when those are not set
+  explicitly.
+</ParamField>
+
+<ParamField path="APP_URLs" type="string" default="http://localhost:3000">
+  Comma-separated list of allowed application URLs used for CORS and redirect
+  validation. Defaults to `APP_URL` when `APP_URL` is set.
+</ParamField>
+
+<ParamField path="API_URL" type="string (URL)">
+  Backend API URL used by the web development proxy. Defaults to `APP_URL`.
+</ParamField>
+
+<ParamField path="WEBHOOK_BASE_URL" type="string (URL)">
+  Base URL for outbound webhook callbacks (e.g., GitLab/GitHub event
+  verification replies).
+</ParamField>
+
+<ParamField path="BETTER_AUTH_URL" type="string (URL)">
+  Override the URL Better Auth uses for its endpoints. Defaults to the first
+  entry in the resolved `APP_URLs` list.
+</ParamField>
+
+<ParamField path="SYSTEM_NAME" type="string">
+  Display name for the platform. Appears in logs, emails, and notification
+  messages. Example: `AI Review Platform`.
+</ParamField>
+
+<ParamField path="CORS_ORIGIN" type="string">
+  Explicit CORS origin override. If not set, CORS is derived from `APP_URLs`.
+</ParamField>
+
+## Queue
+
+<ParamField path="REDIS_URL" type="string">
+  Redis connection URL required by BullMQ for persistent task queues.
+
+  Example: `redis://localhost:16379`
+
+  When not set, the queue falls back to in-memory mode.
+</ParamField>
+
+## AI provider
+
+<ParamField path="VOLCENGINE_API_KEY" type="string">
+  API key for the Volcengine (Doubao) AI provider. Required for AI-powered code
+  reviews — Volcengine is the only currently active provider.
+</ParamField>
+
+<ParamField path="VOLCENGINE_ENDPOINT" type="string">
+  Inference endpoint URL for your Volcengine deployment. Required alongside
+  `VOLCENGINE_API_KEY`.
+</ParamField>
+
+<ParamField path="AI_REVIEW_CONCURRENCY" type="number" default="3">
+  Maximum number of AI review jobs executed concurrently by the server.
+</ParamField>
+
+<ParamField path="REVIEW_TIMEOUT_MINUTES" type="number" default="30">
+  Timeout in minutes for a single review job before it is marked as failed.
+</ParamField>
+
+<ParamField path="OPENAI_API_KEY" type="string">
+  OpenAI API key. Parsed by the schema but not active in the current release.
+</ParamField>
+
+<ParamField path="ANTHROPIC_API_KEY" type="string">
+  Anthropic Claude API key. Parsed by the schema but not active in the current
+  release.
+</ParamField>
+
+<ParamField path="AZURE_OPENAI_API_KEY" type="string">
+  Azure OpenAI API key. Parsed by the schema but not active in the current
+  release.
+</ParamField>
+
+<ParamField path="AZURE_OPENAI_ENDPOINT" type="string">
+  Azure OpenAI endpoint URL. Parsed by the schema but not active in the current
+  release.
+</ParamField>
+
+<ParamField path="VERCEL_API_KEY" type="string">
+  Vercel AI API key. Parsed by the schema but not active in the current release.
+</ParamField>
+
+<ParamField path="MOONSHOT_API_KEY" type="string">
+  Moonshot API key. Parsed by the schema but not active in the current release.
+</ParamField>
+
+## Runner
+
+<ParamField path="RUNNER_HEARTBEAT_TIMEOUT_MS" type="number" default="60000">
+  Milliseconds after which a Runner that has not sent a heartbeat is considered
+  offline. Default is 60 000 ms (60 seconds).
+</ParamField>
+
+## Logging
+
+<ParamField path="LOG_DIR" type="string">
+  Directory path where log files are written. Example: `./logs`.
+</ParamField>
+
+<ParamField path="LOG_LEVEL" type="string">
+  Minimum log level to emit. Accepted values: `error`, `warn`, `info`, `debug`.
+</ParamField>
+
+<ParamField path="LOG_RETENTION_DAYS" type="number">
+  Number of days to retain log files before automatic cleanup.
+</ParamField>
+
+## Backup
+
+<ParamField path="BACKUP_DIR" type="string">
+  Directory path for database backup files. Example: `./backups`.
+</ParamField>
+
+<ParamField path="AUTO_BACKUP_ENABLED" type="boolean" default="false">
+  When `true`, the server runs an automatic database backup daily at 02:00.
+</ParamField>
+
+<ParamField path="BACKUP_RETENTION_DAYS" type="number">
+  Number of days to keep backup files before they are deleted.
+</ParamField>
+
+## Metrics
+
+<ParamField path="METRICS_RETENTION_DAYS" type="number">
+  Number of days to retain metrics data. Example: `90`.
+</ParamField>
+
+## System
+
+<ParamField path="RESET_DB_KEY" type="string">
+  Secret key required to call `POST /api/system/reset`. Keep this value private;
+  the endpoint deletes all data.
+</ParamField>
+
+<ParamField path="ROOT_EMAIL" type="string">
+  Email address for the initial root user created on first startup. Has no
+  effect after the root user already exists.
+</ParamField>
+
+<ParamField path="ROOT_PASSWORD" type="string">
+  Password for the initial root user created on first startup.
+</ParamField>
+
+## OAuth (optional)
+
+<ParamField path="GITHUB_CLIENT_ID" type="string">
+  GitHub OAuth application client ID. Reserved for future OAuth login support.
+</ParamField>
+
+<ParamField path="GITHUB_CLIENT_SECRET" type="string">
+  GitHub OAuth application client secret. Reserved for future OAuth login
+  support.
+</ParamField>
+
+<ParamField path="GITLAB_CLIENT_ID" type="string">
+  GitLab OAuth application client ID. Reserved for future OAuth login support.
+</ParamField>
+
+<ParamField path="GITLAB_CLIENT_SECRET" type="string">
+  GitLab OAuth application client secret. Reserved for future OAuth login
+  support.
+</ParamField>
+
+<ParamField path="GITLAB_CLIENT_ISSUER" type="string">
+  Issuer URL for the GitLab instance used for OAuth. Example:
+  `https://gitlab.example.com`.
+</ParamField>

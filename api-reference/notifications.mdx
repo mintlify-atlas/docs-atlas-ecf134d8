@@ -1,0 +1,325 @@
+---
+title: Notifications
+description: Endpoints for managing notification configuration, querying notification history, and working with push subscriptions.
+---
+
+All notification endpoints are under `/api/notifications` and require authentication.
+
+AI Review supports multiple notification channels: **email**, **Slack**, **webhook**, **WeChat Work (企业微信)**, **DingTalk (钉钉)**, **Feishu (飞书)**, and **browser push**.
+
+---
+
+## Get notification config
+
+`GET /api/notifications/config`
+
+Returns the current notification configuration.
+
+```bash
+curl -X GET https://your-domain.com/api/notifications/config \
+  -H "Authorization: Bearer <api-key>"
+```
+
+**Response `200`**
+
+<ResponseField name="data.config" type="object">
+  <Expandable title="Config fields">
+    <ResponseField name="emailEnabled" type="boolean">Whether email notifications are enabled.</ResponseField>
+    <ResponseField name="smtpHost" type="string | null">SMTP server hostname.</ResponseField>
+    <ResponseField name="smtpPort" type="number | null">SMTP port number.</ResponseField>
+    <ResponseField name="smtpSecure" type="boolean">Use TLS for SMTP. Default: `true`.</ResponseField>
+    <ResponseField name="emailFrom" type="string | null">Sender email address.</ResponseField>
+    <ResponseField name="emailRecipients" type="array">List of recipient email addresses.</ResponseField>
+    <ResponseField name="webhookEnabled" type="boolean">Whether outbound webhook notifications are enabled.</ResponseField>
+    <ResponseField name="webhookUrls" type="array">List of outbound webhook URLs.</ResponseField>
+    <ResponseField name="slackEnabled" type="boolean">Whether Slack notifications are enabled.</ResponseField>
+    <ResponseField name="slackChannels" type="array">List of Slack channel IDs.</ResponseField>
+    <ResponseField name="wechatEnabled" type="boolean">Whether WeChat Work notifications are enabled.</ResponseField>
+    <ResponseField name="dingtalkEnabled" type="boolean">Whether DingTalk notifications are enabled.</ResponseField>
+    <ResponseField name="feishuEnabled" type="boolean">Whether Feishu notifications are enabled.</ResponseField>
+    <ResponseField name="pushEnabled" type="boolean">Whether browser push notifications are enabled.</ResponseField>
+    <ResponseField name="notifyOnReviewCompleted" type="boolean">Send a notification when a review completes.</ResponseField>
+    <ResponseField name="notifyOnReviewFailed" type="boolean">Send a notification when a review fails.</ResponseField>
+    <ResponseField name="notifyOnRatingLow" type="boolean">Send a notification when a review rating is below the threshold.</ResponseField>
+    <ResponseField name="ratingThreshold" type="number">Quality score threshold for low-rating alerts. Default: `70`.</ResponseField>
+    <ResponseField name="notificationFrequency" type="string">`immediate` | `daily` | `weekly`</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Create or replace notification config
+
+`POST /api/notifications/config`
+
+Creates or completely replaces the notification configuration. Requires `config:update` permission.
+
+```bash
+curl -X POST https://your-domain.com/api/notifications/config \
+  -H "Authorization: Bearer <api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "emailEnabled": true,
+    "smtpHost": "smtp.example.com",
+    "smtpPort": 587,
+    "emailFrom": "ai-review@example.com",
+    "emailRecipients": ["team@example.com"],
+    "notifyOnReviewCompleted": true
+  }'
+```
+
+The request body accepts any field from the [notification config schema](#get-notification-config).
+
+**Response `200`**
+
+<ResponseField name="data.config" type="object">
+  The saved notification config.
+</ResponseField>
+
+---
+
+## Partially update notification config
+
+`PATCH /api/notifications/config`
+
+Updates only the provided fields in the notification config. Requires `config:update` permission.
+
+Send only the fields you want to change. All other fields remain unchanged.
+
+---
+
+## Test a notification channel
+
+`POST /api/notifications/config/test-channel`
+
+Sends a test notification through the specified channel to verify the configuration is working.
+
+**Request body**
+
+<ParamField body="channel" type="string" required>
+  The channel to test: `email` | `webhook` | `slack` | `wechat` | `dingtalk` | `feishu` | `push`.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data.result" type="object">
+  Test result details including success status and any error message.
+</ResponseField>
+
+---
+
+## Generate VAPID keys
+
+`POST /api/notifications/config/generate-vapid-keys`
+
+Generates a new VAPID key pair for use with browser push notifications. Requires `config:update` permission.
+
+Store the private key securely — it cannot be recovered after leaving this response.
+
+```bash
+curl -X POST https://your-domain.com/api/notifications/config/generate-vapid-keys \
+  -H "Authorization: Bearer <api-key>"
+```
+
+**Response `200`**
+
+<ResponseField name="data.keys" type="object">
+  <Expandable title="VAPID key fields">
+    <ResponseField name="publicKey" type="string">The VAPID public key (share with browser clients).</ResponseField>
+    <ResponseField name="privateKey" type="string">The VAPID private key (store securely on the server).</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## List notification history
+
+`GET /api/notifications`
+
+Returns a paginated list of notification history records.
+
+```bash
+curl -X GET "https://your-domain.com/api/notifications?page=1&pageSize=20" \
+  -H "Authorization: Bearer <api-key>"
+```
+
+<ParamField query="page" type="number">
+  Page number. Default: `1`.
+</ParamField>
+
+<ParamField query="pageSize" type="number">
+  Items per page.
+</ParamField>
+
+<ParamField query="channel" type="string">
+  Filter by channel: `email` | `webhook` | `slack` | `wechat` | `dingtalk` | `feishu` | `push`.
+</ParamField>
+
+<ParamField query="status" type="string">
+  Filter by delivery status: `pending` | `sent` | `failed`.
+</ParamField>
+
+<ParamField query="notificationType" type="string">
+  Filter by event type: `review_completed` | `review_failed` | `rating_low` | `daily_summary` | `weekly_summary`.
+</ParamField>
+
+<ParamField query="reviewId" type="string">
+  Filter by review UUID.
+</ParamField>
+
+<ParamField query="startDate" type="string">
+  ISO 8601 start date.
+</ParamField>
+
+<ParamField query="endDate" type="string">
+  ISO 8601 end date.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data.items" type="array">
+  <Expandable title="History record fields">
+    <ResponseField name="id" type="string">Record UUID.</ResponseField>
+    <ResponseField name="reviewId" type="string | null">Associated review UUID.</ResponseField>
+    <ResponseField name="channel" type="string">Delivery channel used.</ResponseField>
+    <ResponseField name="notificationType" type="string">Event type that triggered the notification.</ResponseField>
+    <ResponseField name="recipient" type="string | null">Recipient address or identifier.</ResponseField>
+    <ResponseField name="status" type="string">`pending` | `sent` | `failed`</ResponseField>
+    <ResponseField name="errorMessage" type="string | null">Error detail if delivery failed.</ResponseField>
+    <ResponseField name="sentAt" type="string | null">ISO 8601 timestamp when the notification was sent.</ResponseField>
+    <ResponseField name="createdAt" type="string">ISO 8601 creation timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Get a notification history record
+
+`GET /api/notifications/history/:id`
+
+<ParamField path="id" type="string" required>
+  Notification history record ID.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data.notification" type="object">
+  Single notification history record.
+</ResponseField>
+
+---
+
+## Get notification statistics
+
+`GET /api/notifications/stats`
+
+Returns delivery statistics aggregated by channel and status.
+
+<ParamField query="startDate" type="string">
+  ISO 8601 start date for the statistics window.
+</ParamField>
+
+<ParamField query="endDate" type="string">
+  ISO 8601 end date for the statistics window.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data.stats" type="object">
+  Aggregated notification statistics.
+</ResponseField>
+
+---
+
+## Get pending notifications
+
+`GET /api/notifications/pending`
+
+Returns all notifications currently in `pending` status (awaiting delivery).
+
+---
+
+## Get failed notifications
+
+`GET /api/notifications/failed`
+
+Returns all notifications with `failed` delivery status.
+
+---
+
+## Clean old notifications
+
+`POST /api/notifications/clean`
+
+Deletes notification history records older than the specified number of days. Requires `notification:delete` permission.
+
+**Request body**
+
+<ParamField body="days" type="number" required>
+  Delete records older than this many days.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data.deleted" type="number">
+  Number of records deleted.
+</ResponseField>
+
+---
+
+## Push subscription management
+
+### Subscribe to push notifications
+
+`POST /api/notifications/push/subscribe`
+
+Registers a browser push subscription endpoint.
+
+**Request body**
+
+<ParamField body="endpoint" type="string" required>
+  The push subscription endpoint URL from the browser.
+</ParamField>
+
+<ParamField body="keys" type="object" required>
+  <Expandable title="Key fields">
+    <ParamField body="p256dh" type="string" required>P-256 Diffie-Hellman public key.</ParamField>
+    <ParamField body="auth" type="string" required>Authentication secret.</ParamField>
+  </Expandable>
+</ParamField>
+
+### List all push subscriptions
+
+`GET /api/notifications/push/subscriptions`
+
+Returns all registered push subscriptions.
+
+### Get push subscriptions for a user
+
+`GET /api/notifications/push/users/:userId`
+
+<ParamField path="userId" type="string" required>
+  User ID whose subscriptions to retrieve.
+</ParamField>
+
+### Update subscription last-used timestamp
+
+`POST /api/notifications/push/touch`
+
+<ParamField body="endpoint" type="string" required>
+  The push subscription endpoint to update.
+</ParamField>
+
+### Unsubscribe from push notifications
+
+`DELETE /api/notifications/push/unsubscribe`
+
+<ParamField body="endpoint" type="string" required>
+  The push subscription endpoint to remove.
+</ParamField>
+
+### Clean expired push subscriptions
+
+`POST /api/notifications/push/clean`
+
+Deletes all expired push subscriptions. Requires `notification:delete` permission.

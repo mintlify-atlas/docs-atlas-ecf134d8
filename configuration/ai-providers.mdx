@@ -1,0 +1,116 @@
+---
+title: AI Providers
+description: Configure AI providers and models for code review in AI Review.
+---
+
+<Warning>
+  Only **Volcengine** is currently activated in the codebase. The environment
+  schema preserves fields for other providers (OpenAI, Anthropic, Azure OpenAI,
+  Vercel, Moonshot), but none of those are wired up in
+  `apps/server/src/config/ai-providers.ts`. Set only `VOLCENGINE_API_KEY` and
+  `VOLCENGINE_ENDPOINT` for AI reviews to function.
+</Warning>
+
+## Overview
+
+AI Review uses a configurable AI provider system. Each provider exposes one or
+more models. Models can be defined at the global level or overridden per
+project.
+
+The active provider list is controlled in
+`apps/server/src/config/ai-providers.ts`:
+
+```ts
+export const ACTIVE_AI_PROVIDERS = [
+  'volcengine',
+] as const
+```
+
+## Environment variables
+
+Set these two variables before starting the server:
+
+| Variable | Description | Required |
+|---|---|---|
+| `VOLCENGINE_API_KEY` | API key issued by Volcengine (Doubao) | Yes |
+| `VOLCENGINE_ENDPOINT` | Inference endpoint URL for your deployment | Yes |
+
+```bash
+VOLCENGINE_API_KEY=your-volcengine-api-key-here
+VOLCENGINE_ENDPOINT=your-volcengine-endpoint-here
+```
+
+### Preserved but inactive variables
+
+The following variables are parsed by the server's environment schema but have
+no active provider implementation:
+
+| Variable | Provider |
+|---|---|
+| `OPENAI_API_KEY` | OpenAI |
+| `ANTHROPIC_API_KEY` | Anthropic Claude |
+| `AZURE_OPENAI_API_KEY` / `AZURE_OPENAI_ENDPOINT` | Azure OpenAI |
+| `VERCEL_API_KEY` | Vercel |
+| `MOONSHOT_API_KEY` | Moonshot |
+
+Setting these variables has no effect on review execution in the current
+release.
+
+## Configure AI in the dashboard
+
+<Steps>
+  <Step title="Open AI Configuration">
+    Log in to the dashboard and navigate to **Settings → AI Configuration**.
+  </Step>
+  <Step title="Add an AI configuration">
+    Click **Add Configuration** and fill in the fields:
+
+    | Field | Description |
+    |---|---|
+    | Name | A display name for this configuration |
+    | Provider | Select `volcengine` |
+    | Model | The model ID to use for reviews |
+    | API Key | Your Volcengine API key |
+    | Endpoint | Your Volcengine inference endpoint |
+
+  </Step>
+  <Step title="Set as default (optional)">
+    Mark the configuration as the **global default** so all projects without a
+    per-project override use it.
+  </Step>
+  <Step title="Verify">
+    Use the test button to confirm the provider responds before saving.
+  </Step>
+</Steps>
+
+## Per-project AI configuration
+
+Each project can override the global default AI configuration:
+
+1. Open the project from the **Projects** page.
+2. Go to the project's **Settings** tab.
+3. Under **AI Configuration**, select a specific AI configuration or leave it
+   set to **Use global default**.
+
+When a review is triggered for a project, the server resolves configuration in
+this order:
+
+1. Per-project AI configuration (if set)
+2. Global default AI configuration
+
+## Managing AI models
+
+AI models are managed separately from AI configurations and represent the
+specific model identifiers available for selection.
+
+To add or manage models:
+
+1. Navigate to **Settings → AI Models** in the dashboard.
+2. Click **Add Model** to register a new model ID.
+3. Assign the model to an AI configuration when creating or editing that
+   configuration.
+
+<Tip>
+  Model IDs must match the identifiers expected by the Volcengine endpoint. Check
+  your Volcengine console for the exact model endpoint names.
+</Tip>

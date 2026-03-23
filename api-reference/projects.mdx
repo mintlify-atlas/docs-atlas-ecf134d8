@@ -1,0 +1,416 @@
+---
+title: Projects
+description: Endpoints for listing, syncing, configuring, and managing webhook setup for projects.
+---
+
+All project endpoints are under `/api/projects` and require authentication.
+
+---
+
+## List projects
+
+`GET /api/projects`
+
+Returns all synced projects as a flat list.
+
+```bash
+curl -X GET https://your-domain.com/api/projects \
+  -H "Authorization: Bearer <api-key>"
+```
+
+**Response `200`**
+
+<ResponseField name="data.items" type="array">
+  <Expandable title="Project fields">
+    <ResponseField name="id" type="string">Project UUID.</ResponseField>
+    <ResponseField name="name" type="string">Project display name.</ResponseField>
+    <ResponseField name="platformType" type="string">`gitlab` | `github`</ResponseField>
+    <ResponseField name="enabled" type="boolean">Whether AI review is enabled for this project.</ResponseField>
+    <ResponseField name="autoReview" type="boolean | null">Project-level auto-review override. `null` means the global default is used.</ResponseField>
+    <ResponseField name="webhookStatus" type="string | null">`active` | `inactive` | `error` | `unknown`</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## List projects (paginated)
+
+`GET /api/projects/paginated`
+
+Returns a paginated, filterable list of projects.
+
+<ParamField query="page" type="number">
+  Page number. Default: `1`.
+</ParamField>
+
+<ParamField query="pageSize" type="number">
+  Items per page. Default: `20`, max: `100`.
+</ParamField>
+
+<ParamField query="search" type="string">
+  Search term matched against project name or path.
+</ParamField>
+
+<ParamField query="platformType" type="string">
+  Filter by platform: `gitlab` | `github`.
+</ParamField>
+
+<ParamField query="platformConfigId" type="string">
+  Filter by platform config UUID.
+</ParamField>
+
+<ParamField query="enabled" type="boolean">
+  Filter by enabled status.
+</ParamField>
+
+<ParamField query="webhookStatus" type="string">
+  Filter by webhook status: `active` | `inactive` | `error` | `unknown` | `not_configured`.
+</ParamField>
+
+---
+
+## Get project statistics
+
+`GET /api/projects/stats`
+
+Returns aggregate statistics across all projects (review counts, webhook coverage, etc.).
+
+**Response `200`**
+
+<ResponseField name="data.stats" type="object">
+  Aggregate project statistics.
+</ResponseField>
+
+---
+
+## Sync projects from a platform
+
+`POST /api/projects/sync/platform`
+
+Fetches all projects from the specified platform config and upserts them into the database. Requires `project:create` permission.
+
+```bash
+curl -X POST https://your-domain.com/api/projects/sync/platform \
+  -H "Authorization: Bearer <api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{"platformConfigId": "<platform-config-uuid>"}'
+```
+
+**Request body**
+
+<ParamField body="platformConfigId" type="string" required>
+  UUID of the platform config to sync from.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data.synced" type="number">
+  Number of projects successfully synced.
+</ResponseField>
+
+<ResponseField name="data.total" type="number">
+  Total number of projects found on the platform.
+</ResponseField>
+
+<ResponseField name="data.errors" type="array">
+  List of any errors encountered during sync.
+</ResponseField>
+
+---
+
+## Update project settings
+
+`PATCH /api/projects/:projectId`
+
+Partially updates a project's configuration. Requires `project:update` permission.
+
+```bash
+curl -X PATCH https://your-domain.com/api/projects/<project-uuid> \
+  -H "Authorization: Bearer <api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": true, "autoReview": false}'
+```
+
+<ParamField path="projectId" type="string" required>
+  UUID of the project to update.
+</ParamField>
+
+**Request body** (all fields optional)
+
+<ParamField body="enabled" type="boolean">
+  Enable or disable AI review for this project.
+</ParamField>
+
+<ParamField body="autoReview" type="boolean | null">
+  Override auto-review setting. Set to `null` to inherit the global default.
+</ParamField>
+
+<ParamField body="fileIgnorePatterns" type="array | null">
+  List of glob patterns for files to exclude from review. `null` inherits global setting.
+</ParamField>
+
+<ParamField body="aiConfigId" type="string | null">
+  UUID of the AI config to use. `null` inherits the global default.
+</ParamField>
+
+<ParamField body="defaultReviewerIds" type="array">
+  Array of platform user IDs to auto-assign as reviewers on new MRs / PRs.
+</ParamField>
+
+<ParamField body="autoAssignAuthor" type="boolean">
+  Whether to automatically assign the MR / PR author as assignee.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data.project" type="object">
+  Updated project record.
+</ResponseField>
+
+---
+
+## Get project configuration
+
+`GET /api/projects/:projectId/config`
+
+Returns the resolved configuration for a project, including inherited global settings.
+
+<ParamField path="projectId" type="string" required>
+  UUID of the project.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data.config" type="object">
+  Resolved project configuration.
+</ResponseField>
+
+---
+
+## Get project workspace summary
+
+`GET /api/projects/:projectId/workspace`
+
+Returns an aggregated workspace view for the project, including recent reviews and pipeline status.
+
+<ParamField path="projectId" type="string" required>
+  UUID of the project.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data.workspace" type="object">
+  Aggregated workspace data.
+</ResponseField>
+
+---
+
+## Get platform project details
+
+`GET /api/projects/:projectId/platform`
+
+Fetches live project details from the upstream platform API (GitLab or GitHub).
+
+<ParamField path="projectId" type="string" required>
+  UUID of the project.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data.project" type="object">
+  <Expandable title="Platform project fields">
+    <ResponseField name="id" type="string">Platform project ID.</ResponseField>
+    <ResponseField name="name" type="string">Project name.</ResponseField>
+    <ResponseField name="fullPath" type="string">Full path with namespace.</ResponseField>
+    <ResponseField name="webUrl" type="string">URL to the project on the platform.</ResponseField>
+    <ResponseField name="defaultBranch" type="string | null">Default branch name.</ResponseField>
+    <ResponseField name="visibility" type="string | null">Visibility level.</ResponseField>
+    <ResponseField name="platformType" type="string">`gitlab` | `github`</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Get project members
+
+`GET /api/projects/:projectId/members`
+
+Fetches project members from the upstream platform.
+
+<ParamField path="projectId" type="string" required>
+  UUID of the project.
+</ParamField>
+
+<ParamField query="search" type="string">
+  Search term to filter members by name or username.
+</ParamField>
+
+<ParamField query="page" type="number">
+  Page number. Default: `1`.
+</ParamField>
+
+<ParamField query="pageSize" type="number">
+  Items per page. Default: `20`, max: `100`.
+</ParamField>
+
+---
+
+## Get project merge requests
+
+`GET /api/projects/:projectId/merge-requests`
+
+Fetches merge requests / pull requests from the upstream platform.
+
+<ParamField path="projectId" type="string" required>
+  UUID of the project.
+</ParamField>
+
+<ParamField query="state" type="string">
+  Filter by MR state: `all` | `opened` | `merged` | `closed`. Default: `opened`.
+</ParamField>
+
+<ParamField query="search" type="string">
+  Search term.
+</ParamField>
+
+<ParamField query="page" type="number">
+  Page number. Default: `1`.
+</ParamField>
+
+<ParamField query="pageSize" type="number">
+  Items per page. Default: `20`, max: `100`.
+</ParamField>
+
+---
+
+## Get project pipelines
+
+`GET /api/projects/:projectId/pipelines`
+
+Returns the review pipeline history for a project.
+
+<ParamField path="projectId" type="string" required>
+  UUID of the project.
+</ParamField>
+
+<ParamField query="status" type="string">
+  Filter by pipeline status: `pending` | `in_progress` | `completed` | `failed` | `queued` | `processing`.
+</ParamField>
+
+<ParamField query="triggeredBy" type="string">
+  Filter by trigger type: `auto` | `manual`.
+</ParamField>
+
+<ParamField query="mrIid" type="number">
+  Filter by MR / PR number.
+</ParamField>
+
+<ParamField query="page" type="number">
+  Page number. Default: `1`.
+</ParamField>
+
+<ParamField query="pageSize" type="number">
+  Items per page. Default: `20`, max: `100`.
+</ParamField>
+
+---
+
+## Batch create webhooks
+
+`POST /api/projects/webhooks/batch`
+
+Creates webhooks on the platform for multiple projects at once. Requires `project:update` permission.
+
+```bash
+curl -X POST https://your-domain.com/api/projects/webhooks/batch \
+  -H "Authorization: Bearer <api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "projectIds": ["<uuid-1>", "<uuid-2>"],
+    "webhookUrl": "https://your-domain.com/api/webhook/gitlab"
+  }'
+```
+
+**Request body**
+
+<ParamField body="projectIds" type="array" required>
+  List of project UUIDs to configure webhooks for. At least one required.
+</ParamField>
+
+<ParamField body="webhookUrl" type="string">
+  Override the webhook URL. Defaults to the server's configured webhook endpoint.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data.success" type="number">
+  Number of webhooks successfully created.
+</ResponseField>
+
+<ResponseField name="data.failed" type="number">
+  Number of webhooks that failed to create.
+</ResponseField>
+
+<ResponseField name="data.results" type="array">
+  Per-project result details.
+</ResponseField>
+
+---
+
+## Remove a webhook
+
+`POST /api/projects/webhooks/remove`
+
+Removes the webhook for a single project from the upstream platform. Requires `project:update` permission.
+
+**Request body**
+
+<ParamField body="projectId" type="string" required>
+  UUID of the project whose webhook should be removed.
+</ParamField>
+
+---
+
+## Verify webhooks
+
+`POST /api/projects/webhooks/verify`
+
+Checks the webhook status for all projects and updates the `webhookStatus` field in the database. Requires `project:update` permission.
+
+---
+
+## Clear a project's webhook configuration
+
+`POST /api/projects/:projectId/webhook/clear`
+
+Clears the stored webhook metadata for a project without calling the upstream API. Requires `project:update` permission.
+
+<ParamField path="projectId" type="string" required>
+  UUID of the project.
+</ParamField>
+
+---
+
+## Delete a project
+
+`DELETE /api/projects/:projectId`
+
+Deletes a project record from the database. Requires `project:delete` permission.
+
+<ParamField path="projectId" type="string" required>
+  UUID of the project to delete.
+</ParamField>
+
+---
+
+## Batch delete projects
+
+`POST /api/projects/delete/batch`
+
+Deletes multiple project records at once. Requires `project:delete` permission.
+
+**Request body**
+
+<ParamField body="projectIds" type="array" required>
+  List of project UUIDs to delete. At least one required.
+</ParamField>

@@ -1,0 +1,158 @@
+---
+title: Review flow
+description: End-to-end walkthrough of how a code review moves from webhook to results.
+---
+
+Every automated review follows the same execution chain, whether triggered by a platform webhook or started manually. This page traces that chain from start to finish.
+
+## Execution chain
+
+```text
+┌─────────────────────────────────────────────┐
+│  GitLab / GitHub webhook  OR  manual trigger │
+└──────────────────────┬──────────────────────┘
+                       │
+                       ▼
+            POST /api/webhook/gitlab
+            POST /api/webhook/github
+                       │
+                       ▼
+            ReviewOrchestrator
+          (project validation checks)
+                       │
+                       ▼
+     reviewTasks + runnerTasks created
+           in BullMQ queue (Redis)
+                       │
+                       ▼
+       Runner polls for tasks via HTTP
+                       │
+                       ▼
+    Review executed in Docker container
+                       │
+                       ▼
+      Runner reports results to server
+                       │
+                       ▼
+   Server stores history, comments,
+   file annotations, ratings, feedback
+                       │
+                       ▼
+   Notifications + platform push-back
+```
+
+## Step-by-step
+
+<Steps>
+  <Step title="Webhook arrives">
+    The platform (GitLab or GitHub) sends an HTTP POST to the server when a merge request or pull request event fires:
+
+    ```text
+    POST /api/webhook/gitlab
+    POST /api/webhook/github
+    ```
+
+    The webhook module validates the request signature before passing it to the orchestrator.
+  </Step>
+
+  <Step title="ReviewOrchestrator validates the project">
+    `modules/reviews/review-orchestrator.service.ts` runs a series of checks before any queue work is created. All of the following must pass:
+
+    - **Project exists** — the repository is known to the system
+    - **Project is enabled** — the project has not been disabled
+    - **Auto-review is on** — the project's auto-review toggle is active (webhook path only)
+    - **AI config is available** — an AI configuration is attached to the project
+    - **Platform config is complete** — the platform integration (GitLab/GitHub) is fully configured
+
+    If any check fails, the review is rejected early and no tasks are queued.
+
+    <Note>
+      Manual triggers bypass the auto-review toggle check but still require the project to exist, be enabled, and have both AI and platform configs present.
+    </Note>
+  </Step>
+
+  <Step title="Tasks are created in the queue">
+    Once validation passes, the orchestrator creates two linked entries in BullMQ:
+
+    - **`reviewTasks`** — tracks the overall review lifecycle
+    - **`runnerTasks`** — the unit of work a runner will pick up
+
+    Both entries are stored in Redis and are immediately available for polling.
+  </Step>
+
+  <Step title="Runner picks up the task">
+    A registered runner polls the server over HTTP at a configurable interval (`RUNNER_POLL_INTERVAL_MS`). When a task is available, the runner claims it and transitions it from pending to in-progress.
+
+    See [Runner](/concepts/runner) for details on registration and polling.
+  </Step>
+
+  <Step title="Review executes in an isolated container">
+    The runner uses its Docker executor to spin up an isolated container (configured by `DOCKER_EXECUTOR_IMAGE`) and runs the full review pipeline inside it:
+
+    - Clone the repository at the target revision
+    - Apply the review rules and template
+    - Call the configured AI model
+    - Collect file-level annotations and an overall assessment
+
+    The following services coordinate this step:
+
+    ```text
+    review-core.service.ts
+    review-context.builder.ts
+    review-execution.engine.ts
+    ```
+  </Step>
+
+  <Step title="Runner reports results">
+    After execution completes (or fails), the runner posts the results back to the server. The server's `review-result.handler.ts` processes the payload and persists:
+
+    - Review history record
+    - File-level comments and annotations
+    - Per-round details
+    - Quality ratings
+    - Feedback entries
+  </Step>
+
+  <Step title="Notifications and platform push-back">
+    With results stored, the server triggers downstream actions:
+
+    - **Notifications** — configured channels (Slack, email, webhook) receive a summary
+    - **Platform push-back** — comments or review status are posted back to the GitLab MR or GitHub PR
+  </Step>
+</Steps>
+
+## Manual trigger flow
+
+Reviews can also be started manually from the dashboard without a webhook event. The flow is identical from step 2 onward, with one difference: the auto-review toggle check is skipped.
+
+```text
+Dashboard → POST /api/reviews  →  ReviewOrchestrator  →  queue  →  runner  →  results
+```
+
+## Projectability checks
+
+The table below summarises all conditions the orchestrator verifies before queuing work:
+
+| Check | Webhook | Manual |
+|---|---|---|
+| Project exists | Required | Required |
+| Project enabled | Required | Required |
+| Auto-review toggle on | Required | Not checked |
+| AI config present | Required | Required |
+| Platform config complete | Required | Required |
+
+<Warning>
+  If a runner is registered but offline (heartbeat timed out), tasks will accumulate in the queue in a pending state. Reviews will not execute until a healthy runner comes online.
+</Warning>
+
+## Core service files
+
+The review pipeline is implemented across these files in `apps/server/src/modules/reviews/`:
+
+```text
+review-orchestrator.service.ts  # Entry point, validation, task creation
+review-core.service.ts          # Core review logic
+review-context.builder.ts       # Assembles context passed to the AI
+review-execution.engine.ts      # Drives the AI call and result collection
+review-result.handler.ts        # Persists results and triggers downstream
+```

@@ -1,80 +1,179 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Run a local AI Review instance and trigger your first automated code review.
 ---
 
-## Get started in three steps
+This guide walks you from zero to a running local AI Review instance. By the end, you will have the server and web dashboard running locally and be ready to configure your first project.
 
-Get your documentation site running locally and make your first customization.
+<Steps>
+  <Step title="Prerequisites">
+    Ensure the following are installed on your machine before continuing:
 
-### Step 1: Set up your local environment
+    - **Node.js 18+**
+    - **pnpm 10+**
+    - **Docker** (used to run PostgreSQL, Redis, and optionally a local GitLab)
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    PostgreSQL and Redis are started automatically via Docker in the next step — you do not need to install them separately.
 
-### Step 2: Deploy your changes
+    <Note>
+      The server's task queue is powered by BullMQ and requires a running Redis instance. There is no in-memory fallback, so `REDIS_URL` must be set.
+    </Note>
+  </Step>
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/TinsFox/ai-review.git
+    cd ai-review
+    ```
+  </Step>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+  <Step title="Install dependencies">
+    ```bash
+    pnpm install
+    ```
+  </Step>
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+  <Step title="Set up environment variables">
+    Copy the example file and fill in the required values:
 
-### Step 3: Go live
+    ```bash
+    cp .env.example .env.development
+    ```
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    Open `.env.development` and set at minimum:
 
-## Next steps
+    ```bash
+    # Required: PostgreSQL connection string
+    DATABASE_URL="postgresql://ai_review:ai_review@localhost:15432/ai_review"
 
-Now that you have your docs running, explore these key features:
+    # Required: at least 32 characters
+    BETTER_AUTH_SECRET=your-secret-at-least-32-characters-long
 
-<CardGroup cols={2}>
+    # Required: Redis for BullMQ task queue
+    REDIS_URL="redis://localhost:16379"
+    ```
 
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
+    The example `DATABASE_URL` and `REDIS_URL` match the ports used by the local Docker services started in the next step.
 
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
+    <Note>
+      `ROOT_EMAIL` and `ROOT_PASSWORD` in `.env.development` let you bootstrap an initial admin account on first startup. Set them now if you want to skip manual account creation.
+    </Note>
+  </Step>
 
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
+  <Step title="Initialize the local development environment">
+    This single command starts PostgreSQL and Redis via Docker and runs the initial database migrations:
 
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
+    ```bash
+    pnpm env:init
+    ```
 
-</CardGroup>
+    What it does:
+    - Starts the `db` (PostgreSQL on port 15432) and `redis` (port 16379) Docker containers
+    - Runs `pnpm db:migrate:dev` to apply all schema migrations
 
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+    <Note>
+      `pnpm env:init` only prepares dependencies and runs migrations. It does **not** start the server or web process — those come next.
+    </Note>
+
+    If you need to run only specific steps:
+
+    <CodeGroup>
+
+    ```bash Start only dependencies
+    pnpm env:deps
+    ```
+
+    ```bash Run migrations only
+    pnpm env:migrate
+    ```
+
+    ```bash Reset the development environment
+    pnpm env:reset
+    ```
+
+    </CodeGroup>
+
+    <Warning>
+      `pnpm env:reset` deletes all local development data.
+    </Warning>
+  </Step>
+
+  <Step title="Start the API server">
+    In a terminal, start the backend server:
+
+    ```bash
+    pnpm dev:server
+    ```
+
+    The API server starts at `http://localhost:3000`. All routes are available under the `/api` prefix.
+  </Step>
+
+  <Step title="Start the web dashboard">
+    In a second terminal, start the frontend dev server:
+
+    ```bash
+    pnpm dev:web
+    ```
+
+    The web dashboard starts at `http://localhost:3001`.
+  </Step>
+
+  <Step title="Access the dashboard">
+    Open [http://localhost:3001](http://localhost:3001) in your browser.
+
+    If you set `ROOT_EMAIL` and `ROOT_PASSWORD`, log in with those credentials. Otherwise, complete the sign-up flow to create your first account.
+  </Step>
+
+  <Step title="Complete the onboarding flow">
+    After logging in, the onboarding flow guides you through the required configuration steps:
+
+    1. **Platform configuration** — connect a GitLab or GitHub instance and provide credentials so AI Review can receive webhooks and post comments.
+    2. **AI configuration** — configure your AI provider. The currently activated provider is Volcengine (Doubao); set `VOLCENGINE_API_KEY` and `VOLCENGINE_ENDPOINT` in your environment file.
+    3. **Project** — sync and add a repository that AI Review will monitor.
+
+    <Note>
+      Although the environment file contains keys for other providers (OpenAI, Anthropic, Azure, Moonshot), only the `volcengine` runtime is active in the current codebase. Configure Volcengine credentials to enable AI review and chat functionality.
+    </Note>
+  </Step>
+
+  <Step title="Trigger a test review">
+    With a project configured, open a merge request (GitLab) or pull request (GitHub) in the connected repository. The platform webhook sends an event to `http://localhost:3000/api/webhook/*`, which enqueues a review task.
+
+    Monitor the review in the **Review History** page of the dashboard at [http://localhost:3001](http://localhost:3001).
+
+    You can also check server logs:
+
+    ```bash
+    tail -f ./data/logs/server.log
+    ```
+  </Step>
+</Steps>
+
+## Port reference
+
+| Service | Port | Description |
+| --- | --- | --- |
+| API server | 3000 | Hono backend, all `/api` routes |
+| Web dashboard | 3001 | React frontend dev server |
+| PostgreSQL | 15432 | Development database |
+| Redis | 16379 | BullMQ task queue |
+| GitLab (optional) | 18080 | Local GitLab web UI |
+| GitLab SSH (optional) | 12222 | Local GitLab SSH |
+
+## Troubleshooting
+
+If a port is already in use, check what is occupying it:
+
+```bash
+lsof -i :15432   # PostgreSQL
+lsof -i :16379   # Redis
+lsof -i :3000    # API server
+lsof -i :3001    # Web dashboard
+```
+
+To view Docker container logs:
+
+```bash
+docker compose -f docker-compose.dev.yml logs db
+docker compose -f docker-compose.dev.yml logs redis
+```

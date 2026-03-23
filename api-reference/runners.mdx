@@ -1,0 +1,260 @@
+---
+title: Runners
+description: Endpoints for registering, monitoring, and interacting with external AI review runners.
+---
+
+Runners are external agents that execute AI reviews in isolated environments (containers). They communicate with the server over HTTP using an API key for authentication.
+
+All runner endpoints are under `/api/runners`. Management endpoints (list, get) require a user session or API key. Task endpoints (register, heartbeat, task pickup, result submission) require an API key passed as `Authorization: Bearer <key>` or `x-api-key: <key>`.
+
+---
+
+## List runners
+
+`GET /api/runners`
+
+Returns all registered runners ordered by most recent heartbeat. Requires authentication.
+
+```bash
+curl -X GET https://your-domain.com/api/runners \
+  -H "Authorization: Bearer <api-key>"
+```
+
+**Response `200`**
+
+<ResponseField name="data" type="array">
+  <Expandable title="Runner fields">
+    <ResponseField name="id" type="string">Runner UUID (set by the runner on registration).</ResponseField>
+    <ResponseField name="name" type="string">Runner display name.</ResponseField>
+    <ResponseField name="version" type="string">Runner software version.</ResponseField>
+    <ResponseField name="status" type="string">`online` | `busy` | `offline`</ResponseField>
+    <ResponseField name="currentJobs" type="number">Number of jobs currently running.</ResponseField>
+    <ResponseField name="maxConcurrentJobs" type="number">Maximum concurrent jobs this runner accepts.</ResponseField>
+    <ResponseField name="totalJobsCompleted" type="number">Lifetime completed job count.</ResponseField>
+    <ResponseField name="totalJobsFailed" type="number">Lifetime failed job count.</ResponseField>
+    <ResponseField name="tags" type="array">String tags used for runner selection.</ResponseField>
+    <ResponseField name="lastHeartbeat" type="string | null">ISO 8601 timestamp of last heartbeat.</ResponseField>
+    <ResponseField name="registeredAt" type="string">ISO 8601 registration timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Get a runner
+
+`GET /api/runners/:id`
+
+Returns details for a specific runner. Requires authentication.
+
+<ParamField path="id" type="string" required>
+  Runner UUID.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data" type="object">
+  Single runner record. Same fields as the list response.
+</ResponseField>
+
+---
+
+## Register a runner
+
+`POST /api/runners/register`
+
+Registered or re-registers a runner. Runners call this endpoint on startup. Uses an upsert — if the runner ID already exists, its fields are updated.
+
+This endpoint requires an API key. Registration metadata is passed via custom headers rather than a JSON body.
+
+```bash
+curl -X POST https://your-domain.com/api/runners/register \
+  -H "x-api-key: <api-key>" \
+  -H "x-runner-id: runner-001" \
+  -H "x-runner-name: My Runner" \
+  -H "x-runner-version: 1.2.0" \
+  -H "x-runner-max-concurrency: 3" \
+  -H "x-runner-tags: gpu,fast"
+```
+
+**Request headers**
+
+<ParamField path="x-runner-id" type="string" required>
+  Unique identifier for this runner instance.
+</ParamField>
+
+<ParamField path="x-runner-name" type="string">
+  Human-readable name. Defaults to the runner ID.
+</ParamField>
+
+<ParamField path="x-runner-version" type="string">
+  Runner software version string. Defaults to `unknown`.
+</ParamField>
+
+<ParamField path="x-runner-max-concurrency" type="number">
+  Maximum number of concurrent review jobs. Default: `5`.
+</ParamField>
+
+<ParamField path="x-runner-tags" type="string">
+  Comma-separated list of tags (e.g., `gpu,fast`).
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data" type="object">
+  The created or updated runner record.
+</ResponseField>
+
+---
+
+## Runner heartbeat
+
+`POST /api/runners/:id/heartbeat`
+
+Runners send this periodically to report their current status. Requires API key authentication.
+
+<ParamField path="id" type="string" required>
+  Runner UUID.
+</ParamField>
+
+**Request body**
+
+<ParamField body="status" type="string" required>
+  Current runner state: `online` | `busy` | `offline`.
+</ParamField>
+
+<ParamField body="currentJobs" type="number" required>
+  Number of jobs currently being processed.
+</ParamField>
+
+---
+
+## Claim pending tasks
+
+`GET /api/runners/tasks/pending`
+
+Returns pending review tasks for a runner to claim and execute. Requires API key authentication.
+
+<ParamField query="runnerId" type="string" required>
+  ID of the runner requesting tasks.
+</ParamField>
+
+<ParamField query="limit" type="string">
+  Maximum number of tasks to claim. Default: `1`.
+</ParamField>
+
+**Response `200`**
+
+<ResponseField name="data" type="array">
+  List of claimed runner task objects, each containing repository URL, branch, commit SHA, file changes, and AI configuration.
+</ResponseField>
+
+---
+
+## Update task status
+
+`POST /api/runners/tasks/:id/status`
+
+Updates the execution phase of a task while it is running. Requires API key authentication.
+
+<ParamField path="id" type="string" required>
+  Runner task UUID.
+</ParamField>
+
+**Request body**
+
+<ParamField body="status" type="string" required>
+  Current phase: `preparing` | `cloning` | `reviewing` | `submitting`.
+</ParamField>
+
+---
+
+## Append task logs
+
+`POST /api/runners/tasks/:id/logs`
+
+Appends log lines to a running task. Requires API key authentication.
+
+<ParamField path="id" type="string" required>
+  Runner task UUID.
+</ParamField>
+
+**Request body**
+
+<ParamField body="logs" type="array" required>
+  Array of log line strings. Between 1 and 200 entries per call.
+</ParamField>
+
+---
+
+## Submit task result
+
+`POST /api/runners/tasks/:id/result`
+
+Submits the final result of a completed review task. Requires API key authentication. This triggers comment posting and review record updates.
+
+<ParamField path="id" type="string" required>
+  Runner task UUID.
+</ParamField>
+
+**Request body**
+
+<ParamField body="runnerId" type="string" required>
+  ID of the runner submitting the result.
+</ParamField>
+
+<ParamField body="status" type="string" required>
+  Final task outcome: `success` | `failed`.
+</ParamField>
+
+<ParamField body="files" type="array" required>
+  Per-file review results.
+
+  <Expandable title="File result fields">
+    <ParamField body="filePath" type="string" required>File path.</ParamField>
+    <ParamField body="status" type="string" required>`success` | `failed`</ParamField>
+    <ParamField body="comments" type="array" required>Array of comment objects with `line`, `severity` (`info` | `warning` | `error`), and `message`.</ParamField>
+    <ParamField body="summary" type="string">AI-generated file summary.</ParamField>
+    <ParamField body="error" type="string">Error message if the file review failed.</ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="totalComments" type="number" required>
+  Total number of comments across all files.
+</ParamField>
+
+<ParamField body="rating" type="string">
+  Overall quality rating: `A` | `B` | `C` | `D` | `F`.
+</ParamField>
+
+<ParamField body="metrics" type="object" required>
+  Timing metrics for the review execution.
+
+  <Expandable title="Metrics fields">
+    <ParamField body="durationMs" type="number" required>Total wall-clock time in milliseconds.</ParamField>
+    <ParamField body="containerPrepareMs" type="number" required>Time spent preparing the container.</ParamField>
+    <ParamField body="cloneMs" type="number" required>Time spent cloning the repository.</ParamField>
+    <ParamField body="reviewMs" type="number" required>Time spent running AI review.</ParamField>
+    <ParamField body="submitMs" type="number" required>Time spent submitting results.</ParamField>
+    <ParamField body="tokensUsed" type="number">Total tokens consumed across all AI calls.</ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="error" type="string">
+  Top-level error message if the task failed.
+</ParamField>
+
+<ParamField body="logs" type="array">
+  Final batch of log lines to append.
+</ParamField>
+
+---
+
+## Deregister a runner
+
+`DELETE /api/runners/:id`
+
+Marks a runner as `offline`. Can be called by the runner itself (API key) or by an authenticated user.
+
+<ParamField path="id" type="string" required>
+  Runner UUID to deregister.
+</ParamField>

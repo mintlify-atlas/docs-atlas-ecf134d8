@@ -1,0 +1,108 @@
+---
+title: Monitoring
+description: Health checks, metrics endpoints, log configuration, and the operations checklist for AI Review.
+---
+
+## Health check endpoints
+
+<CardGroup cols={2}>
+  <Card title="Basic health" icon="heart">
+    `GET /api/health`
+
+    No authentication required. Returns basic status, timestamp, and environment. Suitable for load balancer probes and Docker/Kubernetes health checks.
+  </Card>
+  <Card title="Current health status" icon="chart-bar">
+    `GET /api/health/status`
+
+    Requires authentication. Returns the latest overall health status (`healthy`, `degraded`, or `unhealthy`) and per-component check results from the most recent run.
+  </Card>
+  <Card title="Prometheus metrics" icon="gauge">
+    `GET /api/metrics`
+
+    No authentication required. Returns metrics in Prometheus text format for scraping by monitoring systems.
+  </Card>
+  <Card title="Full health check" icon="stethoscope">
+    `GET /api/health/check`
+
+    Requires authentication. Runs all health checks (database, GitLab, AI providers, disk space) and saves the results to the database.
+  </Card>
+</CardGroup>
+
+### Additional health endpoints
+
+| Endpoint | Description |
+| --- | --- |
+| `GET /api/health/detailed` | Detailed status including uptime and version (requires auth) |
+| `GET /api/health/database` | Database connectivity check (requires auth) |
+| `GET /api/health/gitlab` | GitLab connectivity check (requires auth) |
+| `GET /api/health/ai-providers` | All configured AI provider checks (requires auth) |
+| `GET /api/health/disk-space` | Disk space check (requires auth) |
+| `GET /api/health/history` | Paginated health check history (requires auth) |
+
+### Monitoring API endpoints
+
+| Endpoint | Description |
+| --- | --- |
+| `GET /api/monitoring/overview` | System overview: CPU, memory, uptime, database, API stats |
+| `GET /api/monitoring/system` | Historical system metrics (paginated) |
+| `GET /api/monitoring/database` | Historical database metrics (paginated) |
+| `GET /api/monitoring/api` | API call statistics with success/error rates |
+| `POST /api/monitoring/collect` | Manually trigger system and database metrics collection |
+
+## Log configuration
+
+| Variable | Description |
+| --- | --- |
+| `LOG_DIR` | Directory where log files are written. Must be writable by the server process. |
+| `LOG_LEVEL` | Log verbosity (e.g., `info`, `debug`, `warn`, `error`). |
+| `LOG_RETENTION_DAYS` | Number of days to retain log files before automatic cleanup. |
+
+<Note>
+  Before starting the server, verify that `LOG_DIR` exists and is writable. If the directory is not writable, log output will not be persisted to disk.
+</Note>
+
+## Admin dashboard
+
+The admin dashboard provides built-in observability views under the **System** section:
+
+- **System → Logs** — Browse and search server log output.
+- **System → Monitoring** — View system metrics, database metrics, and API call statistics.
+- **System → Performance** — Review performance suggestions.
+
+## Backup configuration
+
+| Variable | Description |
+| --- | --- |
+| `AUTO_BACKUP_ENABLED` | Set to `true` to enable automatic scheduled backups. |
+| `BACKUP_DIR` | Directory where backup files are written. Must be writable. |
+| `BACKUP_RETENTION_DAYS` | Number of days to retain backup files before automatic cleanup. |
+| `METRICS_RETENTION_DAYS` | Number of days to retain collected metrics data. |
+
+<Note>
+  If automatic backups are enabled, verify after deployment that the backup scheduler has run at least once and that files are appearing in `BACKUP_DIR`.
+</Note>
+
+## Operations checklist
+
+After deployment, verify the following:
+
+**Service health**
+
+- [ ] `GET /api/health` returns a `200` response
+- [ ] `GET /api/health/status` shows `overall: healthy`
+- [ ] `GET /api/metrics` returns Prometheus metrics output
+
+**Key business functions**
+
+- [ ] Login to the admin dashboard succeeds
+- [ ] Platform configuration is readable
+- [ ] AI configuration is readable
+- [ ] Project sync executes without errors
+- [ ] Automatic reviews can be queued
+- [ ] Runner picks up tasks and reports results back to the server
+
+**Storage**
+
+- [ ] `LOG_DIR` is writable and log files are being created
+- [ ] `BACKUP_DIR` is writable
+- [ ] If `AUTO_BACKUP_ENABLED` is set, confirm the scheduler has executed
