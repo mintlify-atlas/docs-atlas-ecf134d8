@@ -1,0 +1,114 @@
+{
+  "projectType": "saas",
+  "projectName": "AI Review",
+  "projectDescription": "A full-stack AI-powered code review platform that integrates with GitLab and GitHub to automatically review merge requests and pull requests using AI models.",
+  "theme": "sequoia",
+  "primaryColor": "#3B82F6",
+  "lightColor": "#EFF6FF",
+  "darkColor": "#1E3A5F",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "self-hosting"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/review-flow",
+              "concepts/runner"
+            ]
+          },
+          {
+            "group": "Platform Integration",
+            "pages": [
+              "integrations/gitlab",
+              "integrations/github"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/ai-providers",
+              "configuration/notifications",
+              "configuration/environment-variables"
+            ]
+          },
+          {
+            "group": "Operations",
+            "pages": [
+              "operations/deployment",
+              "operations/runner-setup",
+              "operations/monitoring",
+              "operations/database"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api-reference/overview",
+              "api-reference/authentication"
+            ]
+          },
+          {
+            "group": "Endpoints",
+            "pages": [
+              "api-reference/reviews",
+              "api-reference/projects",
+              "api-reference/platform-configs",
+              "api-reference/runners",
+              "api-reference/notifications",
+              "api-reference/webhooks",
+              "api-reference/health"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Automated AI code review for GitLab MRs and GitHub PRs via webhooks",
+    "Distributed runner architecture for isolated review execution",
+    "Multi-platform support: GitLab and GitHub integration",
+    "Configurable AI review templates, rules, and rating systems",
+    "Real-time review results with file-level comments and feedback",
+    "Web admin dashboard with review history, trends, and analytics",
+    "Notification system supporting Email, Slack, DingTalk, Feishu, WeChat, and browser push",
+    "BullMQ-based async task queue with Redis",
+    "AI assistant chat interface with session management",
+    "System monitoring, logging, backup, and health check endpoints"
+  ],
+  "publicApiSurface": [
+    "POST /api/webhook/gitlab",
+    "POST /api/webhook/github",
+    "GET /api/reviews",
+    "POST /api/reviews",
+    "GET /api/reviews/:id",
+    "GET /api/projects",
+    "POST /api/projects/sync/platform",
+    "GET /api/platform-configs",
+    "POST /api/platform-configs",
+    "PATCH /api/platform-configs/:id",
+    "DELETE /api/platform-configs/:id",
+    "GET /api/runners",
+    "POST /api/runners/register",
+    "GET /api/notifications",
+    "POST /api/notifications/config",
+    "GET /api/health",
+    "GET /api/health/status",
+    "GET /api/metrics"
+  ]
+}
