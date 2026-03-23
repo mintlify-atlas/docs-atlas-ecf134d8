@@ -71,12 +71,10 @@ values before starting the server.
 
 ## Queue
 
-<ParamField path="REDIS_URL" type="string">
-  Redis connection URL required by BullMQ for persistent task queues.
+<ParamField path="REDIS_URL" type="string" required>
+  Redis connection URL required by BullMQ for persistent task queues. The server throws an error on startup if this is not set.
 
   Example: `redis://localhost:16379`
-
-  When not set, the queue falls back to in-memory mode.
 </ParamField>
 
 ## AI provider
